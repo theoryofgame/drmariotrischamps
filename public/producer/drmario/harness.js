@@ -99,6 +99,17 @@ function buildTrackers() {
 		trackers = { player1: new RoundTracker(), player2: new RoundTracker() };
 		wireTracker(trackers.player1, '1P');
 		wireTracker(trackers.player2, '2P');
+
+		// Versus mode's round boundary is shared -- one player winning/losing ends the round for
+		// both -- but each tracker only sees its own bottle, so it can't notice that on its own.
+		// Propagate one's round_end onto the other; endRound() is a no-op if that tracker's own
+		// result already ended its round, so this can't double-fire or loop between the two.
+		trackers.player1.addEventListener('round_end', event =>
+			trackers.player2.endRound(`opponent_${event.detail.outcome}`)
+		);
+		trackers.player2.addEventListener('round_end', event =>
+			trackers.player1.endRound(`opponent_${event.detail.outcome}`)
+		);
 	} else {
 		trackers = { single: new RoundTracker() };
 		wireTracker(trackers.single, 'SP');

@@ -131,6 +131,52 @@ describe('RoundTracker', () => {
 			]);
 		});
 
+		it('endRound() fires round_end with the given outcome for a round that has no result of its own (versus: the other bottle winning/losing)', () => {
+			tracker.processFrame(frame({ level: 0, virus: 4 }));
+			events.length = 0;
+
+			tracker.endRound('opponent_stage_clear');
+
+			expect(events).toEqual([
+				{
+					type: 'round_end',
+					detail: {
+						roundId: 1,
+						outcome: 'opponent_stage_clear',
+						virusCount: 4,
+					},
+				},
+			]);
+		});
+
+		it('endRound() is a no-op if this bottle already ended its own round -- no double-fire from cross-wiring both trackers', () => {
+			tracker.processFrame(frame({ level: 0, virus: 4 }));
+			tracker.processFrame(frame({ result: 'topout' }));
+			events.length = 0;
+
+			tracker.endRound('opponent_stage_clear');
+
+			expect(events).toEqual([]);
+		});
+
+		it('picks up a new round normally after endRound(), the same as after an ordinary round_end', () => {
+			tracker.processFrame(frame({ level: 0, virus: 4 }));
+			tracker.endRound('opponent_topout');
+			events.length = 0;
+
+			// versus shares one virus/pill seed between both bottles, so the next round's
+			// population can start appearing here even though this bottle's own `result` never
+			// left 'playing'
+			tracker.processFrame(frame({ level: 3, virus: 0 }));
+
+			expect(events).toEqual([
+				{
+					type: 'round_start',
+					detail: { roundId: 2, level: 3, virusTarget: 16 },
+				},
+			]);
+		});
+
 		it('keeps picking up level (and its virus target) on later frames if it was unreadable on the round_start frame, confirming it via round_level_confirmed', () => {
 			// e.g. an unstable read right at a round boundary -- reported live, not yet tied to
 			// a specific captured cause (possibly whatever screen precedes round start)

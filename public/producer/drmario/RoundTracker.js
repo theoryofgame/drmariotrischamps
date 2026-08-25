@@ -9,6 +9,11 @@
 //   doesn't need a score/lines heuristic to detect a round boundary -- the playing -> not-
 //   playing -> playing transition on `result` *is* the boundary. That heuristic is only used to
 //   bootstrap the very first frame ever seen, before any boundary has actually been observed.
+//   In versus mode specifically, this isn't the *whole* boundary, though: one player's win/loss
+//   ends the round for both, but reportedly (live, not yet captured) the other bottle's own
+//   result can keep reading 'playing' regardless -- one instance only ever sees its own bottle,
+//   so it has no way to notice that on its own. See endRound() below for how the consumer running
+//   both players' trackers closes that gap.
 // - Virus count isn't monotonic the way Tetris's line count is: it counts *up* during each
 //   round's initial population (viruses are placed one at a time up to 4*(level+1) for that
 //   level) before counting down as the player clears them. See PHASE below.
@@ -219,6 +224,30 @@ export default class RoundTracker extends EventTarget {
 		}
 
 		this.#detectPieceEntries(frame.board, frame.nextPill);
+	}
+
+	// Versus mode's round boundary is shared between both bottles -- one player winning
+	// (stage_clear) or losing (topout) ends the round for both at once, even though the OTHER
+	// bottle's own ResultOCR reading can keep showing 'playing' for a while (confirmed live: no
+	// captures exist yet of exactly what that bottle shows in the meantime). Since one instance
+	// only ever sees its own bottle's frames, it has no way to notice this on its own -- the
+	// consumer running both players' trackers needs to call this on the *other* tracker when one
+	// instance's own round_end fires (see harness.js's versus wiring), so the linked instance
+	// also ends its round (and, on its own very next 'playing' frame -- e.g. the next round's
+	// virus population starting -- correctly detects a new round_start on its own, the same way
+	// it would after any ordinary round_end).
+	endRound(outcome) {
+		if (this.#phase === PHASE.ENDED) return; // already ended via its own result reading
+		this.#phase = PHASE.ENDED;
+		this.dispatchEvent(
+			new CustomEvent('round_end', {
+				detail: {
+					roundId: this.#roundId,
+					outcome,
+					virusCount: this.#virusCount,
+				},
+			})
+		);
 	}
 
 	// frame.nextPill: the { left, right } shape BoardOCR.identifyNextPill() returns -- see the
