@@ -8,6 +8,8 @@ NESTrisChamps is a browser-based capture, broadcast, and rendering system for NE
 
 It's a plain ESM Node.js app (`"type": "module"` in package.json) with server-rendered EJS views for a few admin/settings pages, and hand-written vanilla JS for the actual capture/render frontends under `public/`. No frontend build step/bundler is used.
 
+This fork (`drmariotrischamps`, forked from `nestrischamps/nestrischamps`) is adding equivalent OCR support for NES Dr. Mario. That work is self-contained under `public/producer/drmario/` (see below) and, so far, is independent of everything else described in this file — it does not yet touch routing, the domain model, the wire protocol, or the DB.
+
 ## Commands
 
 - `npm start` — runs the server (`node -r dotenv/config server.js`), reads config from `.env`
@@ -63,3 +65,21 @@ Read this file first when touching anything connection-related; the in-memory do
 ### Config
 
 All environment variables are declared and validated centrally in `modules/config.js` via `convict` (with a custom `boolean-string` format for env vars like `"true"`/`"1"`). `config.validate({ allowed: 'strict' })` runs at import time, so an unrecognized/undeclared env var will crash startup — always add new env vars to this schema rather than reading `process.env` directly elsewhere.
+
+## Dr. Mario OCR (`public/producer/drmario/`)
+
+A from-scratch OCR system for NES Dr. Mario, built the same way the Tetris OCR was originally derived: by pixel-analyzing real captures rather than guessing geometry/colors. Status: piece/panel identification is implemented and tested for both single-player and versus mode, and wired up to live video via a standalone harness — but none of it is integrated into the actual capture/broadcast pipeline yet (no `GAME_TYPE`-equivalent selection in the real producer flow, no wire format, no server-side domain objects). `tests/fixtures/dr_mario/*.png` are the real captures everything below was derived from and is tested against — add new ones there (with matching new Jest assertions) rather than hand-editing templates when new game states need covering.
+
+**Key design difference from the Tetris OCR**: Tetris reads a field cell as one flat color sampled against a level palette (`../cpuTetrisOCR.js`'s `scanField()`), because a Tetris block always renders identically regardless of piece type. Dr. Mario can't do that — a virus and a pill segment can be the exact same color — so cells are identified by matching the actual NES tile *shape* (a small bank of hand-derived lit/unlit pixel templates), with color as a secondary signal. See `templates.js` for the full reasoning and how virus color/animation-frame and pill shape/color decompose differently (virus shape implies color; pill shape is color-independent, color needs separate sampling).
+
+**Module map**:
+- `shapeMatch.js` — shared pixel-sampling/template-matching primitives (`sampleRegion`, `trimToContent`, `matchBestTemplate`), used by every reader below. `sampleRegion`'s `invert` flag matters: sprites-on-black use bright-is-lit, but the score panel is black-text-on-light and needs the opposite — getting this backwards silently produces garbage matches (happened once; see git history on `PanelOCR.js`).
+- `templates.js` / `digitTemplates.js` / `crownTemplates.js` — the actual shape banks (virus/pill tiles, the digit font + SPEED word, the versus-mode crown icon), each with real per-pixel provenance documented inline.
+- `BoardOCR.js` — `identifyCell()`/`scanBoard()` (the 8x16 bottle grid) and `identifyNextPill()` (the preview pill, positioned above Mario's head in single-player or in each bottle's neck in versus — a fixed screen position, not a grid cell). Both take a `field`/`position` option so the same code drives either single-player's one bottle or versus mode's two.
+- `PanelOCR.js` — `readNumber()` (TOP/SCORE/LEVEL/VIRUS digit sequences) and `readSpeed()` (LOW/MED/HI, matched as a whole word, not per-letter).
+- `CrownOCR.js` — versus-mode round-wins tracker; reports a win *count* per player rather than assuming which grid cell fills first (only one example was ever observed).
+- `constants.js` — all geometry (`FIELD`, `NEXT_PILL`, `VERSUS.*`), the `COLOR_PALETTE`, and `LAYOUT`/`CONFIGS`/`REFERENCE_LOCATIONS`(`_VERSUS`) tying it together. Every coordinate here was measured off a real capture, not estimated — see the git history for the actual pixel-dump methodology if new geometry ever needs deriving (e.g. for a layout variant).
+- `DrMarioOCR.js` — the DOM-facing live-video counterpart to the above (mirrors `../TetrisOCR.js`'s shape: `EventTarget`, `processVideoFrame({video, videoFrame})`, a `'frame'` event), simpler than Tetris's because shape-matching needs no per-task packing canvas. Calibration is currently just one axis-aligned crop rectangle (video pixels → the 256x224 reference frame) — no skew/rotation correction yet.
+- `harness.html` / `harness.js` — standalone page (not part of `ntc-capture`/`CaptureDriver`/the real broadcast flow) for visually testing the above against a real camera or screen/window capture. Open `/producer/drmario/harness.html` directly.
+
+**Known gaps** (useful to know before assuming something is handled): the match/clear animation (a hollow "o" of the clearing color, same shape for both viruses and pills) isn't recognized yet — cells mid-clear will currently misread; round-clear and game-over states aren't detected at all; only single-player and versus layouts exist (no other Dr. Mario modes have been captured).
