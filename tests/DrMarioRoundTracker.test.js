@@ -213,7 +213,7 @@ describe('RoundTracker', () => {
 			expect(events.filter(e => e.type === 'piece_entered')).toHaveLength(2);
 		});
 
-		it('detects a lone half entering a column other than the spawn columns (groundwork for garbage)', () => {
+		it('does not report a lone half in a non-spawn column (that would be garbage, which this deliberately does not detect yet)', () => {
 			tracker.processFrame(frame({ virus: 0 }));
 			events.length = 0;
 
@@ -226,25 +226,36 @@ describe('RoundTracker', () => {
 				})
 			);
 
-			expect(events).toEqual([
-				{
-					type: 'piece_entered',
-					detail: {
-						roundId: 1,
-						cells: [{ col: 0, shape: 'single', color: 'red' }],
-					},
-				},
-			]);
+			expect(events.filter(e => e.type === 'piece_entered')).toEqual([]);
 		});
 
-		it('ignores viruses appearing at the top row during population', () => {
+		it('does not report a single half sitting alone at just one of the two spawn columns', () => {
 			tracker.processFrame(frame({ virus: 0 }));
 			events.length = 0;
 
 			tracker.processFrame(
 				frame({
-					virus: 1,
-					cells: [{ col: 2, row: 0, type: 'virus', color: 'yellow', frame: 0 }],
+					virus: 0,
+					cells: [
+						{ col: 3, row: 0, type: 'pill', shape: 'left', color: 'blue' },
+					],
+				})
+			);
+
+			expect(events.filter(e => e.type === 'piece_entered')).toEqual([]);
+		});
+
+		it('ignores viruses occupying the spawn columns during population', () => {
+			tracker.processFrame(frame({ virus: 0 }));
+			events.length = 0;
+
+			tracker.processFrame(
+				frame({
+					virus: 2,
+					cells: [
+						{ col: 3, row: 0, type: 'virus', color: 'yellow', frame: 0 },
+						{ col: 4, row: 0, type: 'virus', color: 'red', frame: 0 },
+					],
 				})
 			);
 
