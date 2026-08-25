@@ -21,6 +21,12 @@ export const COLS = 8;
 export const ROWS = 16;
 export const CELL_SIZE = 8; // pixels per cell, at REFERENCE_SIZE scale, both axes
 
+// The pill Dr. Mario holds above his head, previewing the piece that will spawn after the one
+// currently in play. Always drawn as a plain horizontal pill (a 'left' half at this position
+// immediately followed by a 'right' half, i.e. two more CELL_SIZE tiles, the same as two
+// adjacent bottle cells), regardless of what orientation the pill actually spawns in.
+export const NEXT_PILL = { x: 190, y: 62 };
+
 // Reference RGB values for the three virus/pill colors, sampled directly from a clean emulator
 // capture. These hold constant across levels and speeds (only the decorative checkerboard
 // background outside the bottle changes with level/speed), which makes Dr. Mario's coloring
@@ -50,8 +56,8 @@ export const LAYOUT = {
 // 256x224 reference frame as FIELD above. All measured directly off a real capture (see
 // tests/fixtures/dr_mario/level00_frameA.png) the same way FIELD/templates.js were.
 //
-// Of these, only `field` has a working scanner today (BoardOCR.js). The rest are scaffolding:
-// their crop rectangles are real and verified, but nothing reads them yet --
+// Of these, `field` and `next_pill` have working scanners today (BoardOCR.js). The rest are
+// scaffolding: their crop rectangles are real and verified, but nothing reads them yet --
 //   - `top`/`score`/`level`/`virus` are digit sequences. Building a digit template bank (the
 //     Dr. Mario equivalent of the Tetris OCR's digit templates, see ../TetrisOCR.js) needs
 //     reference captures covering all 10 digits; the captures on hand only show 0/1/2/4/5.
@@ -59,6 +65,7 @@ export const LAYOUT = {
 //     matching against whole-word templates rather than per-digit ones.
 export const REFERENCE_LOCATIONS = {
 	field: { crop: FIELD },
+	next_pill: { crop: { x: NEXT_PILL.x, y: NEXT_PILL.y, w: 15, h: 7 } },
 	top: { crop: { x: 16, y: 56, w: 55, h: 7 }, pattern: 'DDDDDDD' },
 	score: { crop: { x: 16, y: 80, w: 55, h: 7 }, pattern: 'DDDDDDD' },
 	level: { crop: { x: 216, y: 144, w: 15, h: 7 }, pattern: 'DD' },
@@ -74,6 +81,6 @@ export const CONFIGS = {
 	[LAYOUT.SINGLE_PLAYER]: {
 		layout: LAYOUT.SINGLE_PLAYER,
 		reference: '/producer/drmario/reference_ui_single_player.png',
-		fields: ['field', 'top', 'score', 'level', 'virus', 'speed'],
+		fields: ['field', 'next_pill', 'top', 'score', 'level', 'virus', 'speed'],
 	},
 };

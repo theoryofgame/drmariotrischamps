@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 
 import {
 	identifyCell,
+	identifyNextPill,
 	scanBoard,
 } from '../public/producer/drmario/BoardOCR.js';
 import { COLS, ROWS } from '../public/producer/drmario/constants.js';
@@ -118,6 +119,45 @@ describe('DrMarioBoardOCR', () => {
 				type: 'pill',
 				shape: 'right',
 				color: 'blue',
+			});
+		});
+	});
+
+	describe('next-pill preview (Dr. Mario holds it above his head)', () => {
+		// This is a fixed screen position, not part of the 8x16 bottle grid, previewing the
+		// piece that will spawn *after* the one currently falling -- confirmed by frameA/frameB
+		// showing the same preview while the in-bottle piece keeps falling, and level05_hi_speed
+		// showing a preview that differs from its own currently-falling piece (left blue, right
+		// red -- see the 'different level/speed' tests below).
+		it('stays constant across frames while the current piece is still falling', () => {
+			expect(identifyNextPill(frameA)).toMatchObject({
+				left: { type: 'pill', shape: 'left', color: 'blue' },
+				right: { type: 'pill', shape: 'right', color: 'blue' },
+			});
+			expect(identifyNextPill(frameB)).toMatchObject({
+				left: { type: 'pill', shape: 'left', color: 'blue' },
+				right: { type: 'pill', shape: 'right', color: 'blue' },
+			});
+		});
+
+		it('identifies a two-colored preview', () => {
+			expect(identifyNextPill(pillShapes)).toMatchObject({
+				left: { type: 'pill', shape: 'left', color: 'yellow' },
+				right: { type: 'pill', shape: 'right', color: 'red' },
+			});
+		});
+
+		it('differs from the piece actually falling in the bottle', () => {
+			expect(identifyNextPill(level05HiSpeed)).toMatchObject({
+				left: { type: 'pill', shape: 'left', color: 'red' },
+				right: { type: 'pill', shape: 'right', color: 'red' },
+			});
+			// the currently-falling piece in this same capture is blue/red, not red/red
+			expect(identifyCell(level05HiSpeed, 3, 3)).toMatchObject({
+				color: 'blue',
+			});
+			expect(identifyCell(level05HiSpeed, 4, 3)).toMatchObject({
+				color: 'red',
 			});
 		});
 	});

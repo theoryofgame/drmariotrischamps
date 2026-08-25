@@ -9,7 +9,14 @@
 // silhouettes rather than by sampling a flat color per cell (which is how the Tetris OCR does
 // it -- see ../cpuTetrisOCR.js's scanField()).
 
-import { COLS, ROWS, CELL_SIZE, FIELD, COLOR_PALETTE } from './constants.js';
+import {
+	COLS,
+	ROWS,
+	CELL_SIZE,
+	FIELD,
+	NEXT_PILL,
+	COLOR_PALETTE,
+} from './constants.js';
 import { CELL_TEMPLATES } from './templates.js';
 
 const LIT_LUMA_THRESHOLD = 24; // background is pure black; any real sprite pixel reads well above this
@@ -23,11 +30,14 @@ function getPixel(image, x, y) {
 	return [image.data[idx], image.data[idx + 1], image.data[idx + 2]];
 }
 
-// Samples one bottle cell into a CELL_SIZE x CELL_SIZE grid of { lit, rgb } pixels.
-function sampleCell(image, cellX, cellY) {
+// Samples one cell into a CELL_SIZE x height grid of { lit, rgb } pixels. height defaults to
+// CELL_SIZE (a full bottle cell); identifyNextPill() overrides it to stop 1 row short of a full
+// cell, because unlike a bottle cell -- always padded with blank rows below its content -- the
+// row right after the next-pill preview isn't padding, it's the top of Dr. Mario's hat.
+function sampleCell(image, cellX, cellY, height = CELL_SIZE) {
 	const grid = [];
 
-	for (let y = 0; y < CELL_SIZE; y++) {
+	for (let y = 0; y < height; y++) {
 		const row = [];
 
 		for (let x = 0; x < CELL_SIZE; x++) {
@@ -182,23 +192,26 @@ function sampleDominantColor(trimmedGrid) {
 // into a real (noisy) video pipeline rather than the clean emulator captures it was built from.
 const DEFAULT_MAX_DISTANCE = 6;
 
-export function identifyCell(image, col, row, options = {}) {
+// Core matcher, shared by identifyCell() (an 8x16 grid position inside the bottle) and
+// identifyNextPill() (a fixed screen position that isn't part of that grid at all -- the pill
+// held above Dr. Mario's head previewing what comes after the piece currently in play). Both
+// read a tile at some absolute pixel position and match it the same way; only the sampled
+// height (see sampleCell()) and the caller-supplied `extra` fields (col/row vs. slot) differ.
+function identifyTile(image, tileX, tileY, options, extra) {
 	const maxDistance = options.maxDistance ?? DEFAULT_MAX_DISTANCE;
-	const cellX = FIELD.x + col * CELL_SIZE;
-	const cellY = FIELD.y + row * CELL_SIZE;
 
-	const grid = sampleCell(image, cellX, cellY);
+	const grid = sampleCell(image, tileX, tileY, options.height);
 	const trimmed = trimToContent(grid);
 
 	if (!trimmed) {
-		return { type: 'empty', col, row };
+		return { type: 'empty', ...extra };
 	}
 
 	const litGrid = trimmed.map(r => r.map(p => p.lit));
 	const { template, distance } = matchTemplate(litGrid);
 
 	if (distance > maxDistance) {
-		return { type: 'unknown', col, row, distance, bestGuess: template.id };
+		return { type: 'unknown', ...extra, distance, bestGuess: template.id };
 	}
 
 	if (template.kind === 'virus') {
@@ -206,8 +219,7 @@ export function identifyCell(image, col, row, options = {}) {
 			type: 'virus',
 			color: template.color,
 			frame: template.frame,
-			col,
-			row,
+			...extra,
 			distance,
 		};
 	}
@@ -216,9 +228,41 @@ export function identifyCell(image, col, row, options = {}) {
 		type: 'pill',
 		shape: template.shape,
 		color: sampleDominantColor(trimmed),
-		col,
-		row,
+		...extra,
 		distance,
+	};
+}
+
+export function identifyCell(image, col, row, options = {}) {
+	const cellX = FIELD.x + col * CELL_SIZE;
+	const cellY = FIELD.y + row * CELL_SIZE;
+
+	return identifyTile(image, cellX, cellY, options, { col, row });
+}
+
+// Reads the next-pill preview Dr. Mario holds above his head. Always renders as a horizontal
+// pill (a 'left' shape next to a 'right' shape, using the exact same sprites as an in-bottle
+// horizontal pill -- see templates.js), regardless of what orientation the pill will actually
+// spawn in, so shape isn't informative here: only each half's color is. Confirmed via real
+// captures to differ from the currently-falling piece (it's a preview of what's coming *after*
+// it), and to stay constant across frames while the current piece is still in play.
+export function identifyNextPill(image, options = {}) {
+	// height: 7, not the full CELL_SIZE (8) -- the row right below this preview is the top of
+	// Dr. Mario's hat, not blank padding, so sampling a full cell here would occasionally pull
+	// in a stray lit pixel from it (see sampleCell()).
+	const tileOptions = { ...options, height: 7 };
+
+	return {
+		left: identifyTile(image, NEXT_PILL.x, NEXT_PILL.y, tileOptions, {
+			slot: 'left',
+		}),
+		right: identifyTile(
+			image,
+			NEXT_PILL.x + CELL_SIZE,
+			NEXT_PILL.y,
+			tileOptions,
+			{ slot: 'right' }
+		),
 	};
 }
 
