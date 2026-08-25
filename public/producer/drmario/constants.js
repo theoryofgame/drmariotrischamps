@@ -42,14 +42,14 @@ export const COLOR_PALETTE = {
 // position(s), etc), the same way Tetris's GAME_TYPE distinguishes 'classic' from
 // 'das_trainer'. Dr. Mario needs this too, but for a different reason: single-player shows one
 // bottle with a TOP/SCORE panel and a LEVEL/SPEED/VIRUS panel either side of it (reverse
-// engineered below), while versus mode shows two bottles side by side with a different set of
-// panels (relative score/win count, presumably no per-player TOP score). Versus has not been
-// captured or reverse engineered yet, so it isn't in CONFIGS -- selecting it should fail loudly
-// rather than silently reuse single-player's geometry, which would be wrong in basically every
-// coordinate.
+// engineered below), while versus mode shows two bottles side by side sharing a single
+// LEVEL/SPEED panel above and VIRUS panel below (both listing each player's value side by
+// side), a next-pill preview in each bottle's own neck instead of a Mario portrait, and a
+// "crowns" grid between the bottles tracking round wins instead of a TOP/SCORE panel at all
+// (see VERSUS below).
 export const LAYOUT = {
 	SINGLE_PLAYER: 'single_player',
-	// VERSUS: 'versus', // TODO: needs its own reference captures + REFERENCE_LOCATIONS/CONFIGS entry
+	VERSUS: 'versus',
 };
 
 // Crop rectangles for the single-player screen's non-bottle regions, in the same native
@@ -73,10 +73,89 @@ export const REFERENCE_LOCATIONS = {
 	},
 };
 
+// Versus-mode geometry, measured off tests/fixtures/dr_mario/versus_reference.png the same way
+// everything above was measured off single-player captures. Both bottles use the exact same
+// y/h as single-player's FIELD (the neck-to-body transition and bottle floor haven't moved),
+// just narrower and shifted to make room for a bottle on each side -- so BoardOCR.js's virus
+// and pill templates (see templates.js) apply completely unchanged, only the field origin
+// differs.
+export const VERSUS = {
+	BOTTLE_1P: { x: 32, y: FIELD.y, w: FIELD.w, h: FIELD.h },
+	BOTTLE_2P: { x: 160, y: FIELD.y, w: FIELD.w, h: FIELD.h },
+
+	// Each player's next-pill preview sits in their own bottle's neck (there's no Mario
+	// portrait in this layout). Same shape/color matching as single-player's NEXT_PILL, just a
+	// different position -- see BoardOCR.identifyNextPill()'s `position` option.
+	NEXT_PILL_1P: { x: 56, y: 44 },
+	NEXT_PILL_2P: { x: 184, y: 44 },
+
+	// The round-wins tracker between the two bottles: a 2-column (1P left, 2P right) x 3-row
+	// grid, each cell either blank or holding a crown icon (see crownTemplates.js). Row 0 is the
+	// top row; which row fills first as a player wins rounds hasn't been observed (only one
+	// crown -- bottom-left, i.e. col 0 row 2 -- has been seen so far), so CrownOCR.js reports a
+	// win *count* per player (how many of their 3 cells are filled) rather than assuming a fill
+	// order.
+	CROWN_GRID: {
+		cols: 2,
+		rows: 3,
+		// top-left corner of column 0 / row 0's cell interior; col1 = col0.x + colPitch, etc.
+		x: 113,
+		y: 89,
+		cellW: 14,
+		cellH: 14,
+		colPitch: 16,
+		rowPitch: 16,
+	},
+};
+
+// Digit/word fields for versus mode: same idea as single-player's REFERENCE_LOCATIONS, but
+// LEVEL/SPEED/VIRUS each hold two values side by side (1P then 2P) instead of one, and there's
+// no TOP/SCORE at all.
+export const REFERENCE_LOCATIONS_VERSUS = {
+	field_1p: { crop: VERSUS.BOTTLE_1P },
+	field_2p: { crop: VERSUS.BOTTLE_2P },
+	next_pill_1p: {
+		crop: { x: VERSUS.NEXT_PILL_1P.x, y: VERSUS.NEXT_PILL_1P.y, w: 15, h: 7 },
+	},
+	next_pill_2p: {
+		crop: { x: VERSUS.NEXT_PILL_2P.x, y: VERSUS.NEXT_PILL_2P.y, w: 15, h: 7 },
+	},
+	level_1p: { crop: { x: 110, y: 36, w: 15, h: 7 }, pattern: 'DD' },
+	level_2p: { crop: { x: 132, y: 36, w: 15, h: 7 }, pattern: 'DD' },
+	speed_1p: {
+		crop: { x: 97, y: 48, w: 22, h: 7 },
+		kind: 'enum',
+		values: ['low', 'med', 'hi'],
+	},
+	speed_2p: {
+		crop: { x: 136, y: 48, w: 23, h: 7 },
+		kind: 'enum',
+		values: ['low', 'med', 'hi'],
+	},
+	virus_1p: { crop: { x: 110, y: 184, w: 15, h: 7 }, pattern: 'DD' },
+	virus_2p: { crop: { x: 131, y: 184, w: 15, h: 7 }, pattern: 'DD' },
+};
+
 export const CONFIGS = {
 	[LAYOUT.SINGLE_PLAYER]: {
 		layout: LAYOUT.SINGLE_PLAYER,
 		reference: '/producer/drmario/reference_ui_single_player.png',
 		fields: ['field', 'next_pill', 'top', 'score', 'level', 'virus', 'speed'],
+	},
+	[LAYOUT.VERSUS]: {
+		layout: LAYOUT.VERSUS,
+		reference: '/producer/drmario/reference_ui_versus.png',
+		fields: [
+			'field_1p',
+			'field_2p',
+			'next_pill_1p',
+			'next_pill_2p',
+			'level_1p',
+			'level_2p',
+			'speed_1p',
+			'speed_2p',
+			'virus_1p',
+			'virus_2p',
+		],
 	},
 };

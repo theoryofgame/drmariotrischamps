@@ -17,11 +17,18 @@ import {
 // BoardOCR's, since the digit font has no visually-close pairs at small edit distance.
 const DEFAULT_MAX_DISTANCE = 3;
 
+// Every digit template is exactly this wide (see digitTemplates.js) -- one column short of a
+// full CELL_SIZE. Digit *slots* are still spaced a full CELL_SIZE apart (each digit's crop.x
+// below), but the sample itself is kept to the glyph's own width: versus mode's LEVEL field for
+// 1P packs its two digits only 7px apart (every other digit field observed uses the full 8px),
+// and sampling a full CELL_SIZE there pulls in the neighboring digit's first column.
+const DIGIT_WIDTH = CELL_SIZE - 1;
+
 // A digit field's crop is just its first digit's position; each subsequent digit is another
 // CELL_SIZE to the right (see constants.js REFERENCE_LOCATIONS -- 'DDDDDDD' for TOP/SCORE,
 // 'DD' for LEVEL/VIRUS).
 function readDigit(image, x, y, height, options) {
-	const grid = sampleRegion(image, x, y, CELL_SIZE, height, true);
+	const grid = sampleRegion(image, x, y, DIGIT_WIDTH, height, true);
 	const trimmed = trimToContent(grid);
 
 	if (!trimmed) return null; // blank slot: not expected for a numeric field, but be defensive

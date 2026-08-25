@@ -104,33 +104,42 @@ function identifyTile(image, tileX, tileY, options, extra) {
 	};
 }
 
+// `options.field` lets this target a bottle other than single-player's centered one -- versus
+// mode has two, side by side (see constants.js VERSUS.BOTTLE_1P / BOTTLE_2P), at the same
+// vertical geometry (y/h) but different x origins.
 export function identifyCell(image, col, row, options = {}) {
-	const cellX = FIELD.x + col * CELL_SIZE;
-	const cellY = FIELD.y + row * CELL_SIZE;
+	const field = options.field ?? FIELD;
+	const cellX = field.x + col * CELL_SIZE;
+	const cellY = field.y + row * CELL_SIZE;
 
 	return identifyTile(image, cellX, cellY, options, { col, row });
 }
 
-// Reads the next-pill preview Dr. Mario holds above his head. Always renders as a horizontal
-// pill (a 'left' shape next to a 'right' shape, using the exact same sprites as an in-bottle
-// horizontal pill -- see templates.js), regardless of what orientation the pill will actually
-// spawn in, so shape isn't informative here: only each half's color is. Confirmed via real
-// captures to differ from the currently-falling piece (it's a preview of what's coming *after*
-// it), and to stay constant across frames while the current piece is still in play.
+// Reads a next-pill preview: two cells, always rendered as a horizontal pill (a 'left' shape
+// next to a 'right' shape, using the exact same sprites as an in-bottle horizontal pill -- see
+// templates.js) regardless of what orientation the pill will actually spawn in, so shape isn't
+// informative here, only each half's color is. `options.position` lets this target either
+// player's preview in versus mode (constants.js VERSUS.NEXT_PILL_1P / NEXT_PILL_2P); it
+// defaults to single-player's, where this is the pill Dr. Mario holds above his head.
+// Confirmed (single-player) via real captures to differ from the currently-falling piece --
+// it's a preview of what's coming *after* it -- and to stay constant across frames while the
+// current piece is still in play.
 export function identifyNextPill(image, options = {}) {
-	// height: 7, not the full CELL_SIZE (8) -- the row right below this preview is the top of
-	// Dr. Mario's hat, not blank padding, so sampling a full cell here would occasionally pull
-	// in a stray lit pixel from it.
+	const position = options.position ?? NEXT_PILL;
+	// height: 7, not the full CELL_SIZE (8) -- the row right below this preview isn't blank
+	// padding like it is for a bottle cell (it's the top of Dr. Mario's hat in single-player, or
+	// the neck's decorative bevel in versus mode), so sampling a full cell here would
+	// occasionally pull in a stray lit pixel from it.
 	const tileOptions = { ...options, height: 7 };
 
 	return {
-		left: identifyTile(image, NEXT_PILL.x, NEXT_PILL.y, tileOptions, {
+		left: identifyTile(image, position.x, position.y, tileOptions, {
 			slot: 'left',
 		}),
 		right: identifyTile(
 			image,
-			NEXT_PILL.x + CELL_SIZE,
-			NEXT_PILL.y,
+			position.x + CELL_SIZE,
+			position.y,
 			tileOptions,
 			{ slot: 'right' }
 		),
