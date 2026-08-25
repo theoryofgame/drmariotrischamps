@@ -185,6 +185,19 @@ export default class RoundTracker extends EventTarget {
 			) {
 				this.#level = frame.level;
 				this.#virusTargetCount = virusTarget(this.#level);
+
+				// round_start already fired with level/virusTarget: null -- this is the
+				// correction, for anything that wants the authoritative value without having to
+				// wait for (or infer it from) round_ready.
+				this.dispatchEvent(
+					new CustomEvent('round_level_confirmed', {
+						detail: {
+							roundId: this.#roundId,
+							level: this.#level,
+							virusTarget: this.#virusTargetCount,
+						},
+					})
+				);
 			}
 
 			this.#virusCount = frame.virus ?? this.#virusCount;

@@ -81,7 +81,13 @@ function logTrackerEvent(label, event) {
 }
 
 function wireTracker(tracker, label) {
-	['round_start', 'round_ready', 'round_end', 'piece_entered'].forEach(type => {
+	[
+		'round_start',
+		'round_level_confirmed',
+		'round_ready',
+		'round_end',
+		'piece_entered',
+	].forEach(type => {
 		tracker.addEventListener(type, event => logTrackerEvent(label, event));
 	});
 }

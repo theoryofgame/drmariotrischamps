@@ -59,6 +59,7 @@ describe('RoundTracker', () => {
 		events = collectEvents(
 			tracker,
 			'round_start',
+			'round_level_confirmed',
 			'round_ready',
 			'round_end',
 			'piece_entered'
@@ -130,7 +131,7 @@ describe('RoundTracker', () => {
 			]);
 		});
 
-		it('keeps picking up level (and its virus target) on later frames if it was unreadable on the round_start frame', () => {
+		it('keeps picking up level (and its virus target) on later frames if it was unreadable on the round_start frame, confirming it via round_level_confirmed', () => {
 			// e.g. an unstable read right at a round boundary -- reported live, not yet tied to
 			// a specific captured cause (possibly whatever screen precedes round start)
 			tracker.processFrame(frame({ level: null, virus: null }));
@@ -145,8 +146,24 @@ describe('RoundTracker', () => {
 			tracker.processFrame(frame({ level: 5, virus: 2 }));
 			tracker.processFrame(frame({ level: 5, virus: 24 })); // target = 4 * (5 + 1) = 24
 
+			expect(events.map(e => e.type)).toEqual([
+				'round_start',
+				'round_level_confirmed',
+				'round_ready',
+			]);
+			expect(events[1].detail).toEqual({
+				roundId: 1,
+				level: 5,
+				virusTarget: 24,
+			});
+			expect(events[2].detail).toEqual({ roundId: 1, virusCount: 24 });
+		});
+
+		it('does not fire round_level_confirmed when level was already known at round_start', () => {
+			tracker.processFrame(frame({ level: 0, virus: 0 }));
+			tracker.processFrame(frame({ level: 0, virus: 4 }));
+
 			expect(events.map(e => e.type)).toEqual(['round_start', 'round_ready']);
-			expect(events[1].detail).toEqual({ roundId: 1, virusCount: 24 });
 		});
 	});
 
