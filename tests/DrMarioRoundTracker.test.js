@@ -26,8 +26,19 @@ function frame({
 	virus = null,
 	cells = [],
 	hasBottle = true,
+	nextPill = null,
 } = {}) {
-	return { result, level, virus, board: boardWith(cells), hasBottle };
+	return { result, level, virus, board: boardWith(cells), hasBottle, nextPill };
+}
+
+// Matches BoardOCR.identifyNextPill()'s return shape. Omitted (frame()'s default of
+// nextPill: null) means "couldn't read it this frame" -- RoundTracker treats that as
+// inconclusive rather than as evidence either way.
+function nextPill(leftColor, rightColor) {
+	return {
+		left: { type: 'pill', shape: 'left', color: leftColor },
+		right: { type: 'pill', shape: 'right', color: rightColor },
+	};
 }
 
 function collectEvents(tracker, ...types) {
@@ -200,18 +211,139 @@ describe('RoundTracker', () => {
 			expect(events.filter(e => e.type === 'piece_entered')).toHaveLength(1);
 		});
 
-		it("detects each spawn of a 'rush' of identically-colored pills, since detection is position-based, not color-diff-based", () => {
+		it("detects each spawn of a 'rush' of identically-colored pills, using descent evidence since color alone can't tell them apart", () => {
 			tracker.processFrame(frame({ virus: 0 })); // round_start
 			events.length = 0;
 
-			// first blue-blue pill spawns, then clears the top row as it falls
+			// first blue-blue pill spawns...
 			tracker.processFrame(frame({ virus: 0, cells: bluePill }));
-			tracker.processFrame(frame({ virus: 0 })); // top row empty again (piece fell)
+			// ...and is seen one row lower -- real descent, proving it's actually falling rather
+			// than just sitting in row 0 -- before locking somewhere off top row
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 3, row: 1, type: 'pill', shape: 'left', color: 'blue' },
+						{ col: 4, row: 1, type: 'pill', shape: 'right', color: 'blue' },
+					],
+				})
+			);
+			tracker.processFrame(frame({ virus: 0 })); // top row empty again
 
-			// second blue-blue pill spawns -- identical color to the last one
+			// second blue-blue pill spawns -- identical color to the last one, but the descent
+			// observed in between is what proves this is a genuinely new piece, not color
 			tracker.processFrame(frame({ virus: 0, cells: bluePill }));
 
 			expect(events.filter(e => e.type === 'piece_entered')).toHaveLength(2);
+		});
+
+		it('does not re-fire when a piece is rotated through vertical and back to horizontal in place (colors reversed) -- reproduces a live bug report', () => {
+			const redYellowPill = [
+				{ col: 3, row: 0, type: 'pill', shape: 'left', color: 'red' },
+				{ col: 4, row: 0, type: 'pill', shape: 'right', color: 'yellow' },
+			];
+
+			tracker.processFrame(frame({ virus: 0 })); // round_start
+			events.length = 0;
+
+			tracker.processFrame(frame({ virus: 0, cells: redYellowPill })); // spawns at col 3/4
+			// rotated to vertical -- only the pivot (col 3) remains on row 0; the other half moves
+			// up, off the top of the bottle (per confirmed report), so col 4 goes empty
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [{ col: 3, row: 0, type: 'pill', shape: 'top', color: 'red' }],
+				})
+			);
+			// rotated back to horizontal -- same piece, but which color sits on which side has
+			// flipped (reproduces the exact live-log pattern: red/yellow -> yellow/red)
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 3, row: 0, type: 'pill', shape: 'left', color: 'yellow' },
+						{ col: 4, row: 0, type: 'pill', shape: 'right', color: 'red' },
+					],
+				})
+			);
+
+			expect(events.filter(e => e.type === 'piece_entered')).toHaveLength(1);
+		});
+
+		it('does not re-fire when a piece shifts off the spawn pair and back onto it before falling -- reproduces a live bug report', () => {
+			tracker.processFrame(frame({ virus: 0 })); // round_start
+			events.length = 0;
+
+			tracker.processFrame(frame({ virus: 0, cells: bluePill })); // spawns at col 3/4
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 2, row: 0, type: 'pill', shape: 'left', color: 'blue' },
+						{ col: 3, row: 0, type: 'pill', shape: 'right', color: 'blue' },
+					],
+				})
+			); // shifted left -- spawn pair no longer both occupied
+			tracker.processFrame(frame({ virus: 0, cells: bluePill })); // shifted back onto col 3/4
+
+			expect(events.filter(e => e.type === 'piece_entered')).toHaveLength(1);
+		});
+
+		it('confirms a genuine new spawn via the next-pill preview changing, even with no descent evidence observed', () => {
+			tracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('red', 'yellow') })
+			); // round_start
+			events.length = 0;
+
+			// first piece spawns; preview reveals what comes after it
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: bluePill,
+					nextPill: nextPill('red', 'yellow'),
+				})
+			);
+			// it locks immediately (no descent ever observed -- e.g. flush against a tall stack);
+			// the spawn pair reads empty for a frame with the preview still unchanged
+			tracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('red', 'yellow') })
+			);
+			// the previewed piece spawns; the preview updates to reveal the *next* one
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 3, row: 0, type: 'pill', shape: 'left', color: 'red' },
+						{ col: 4, row: 0, type: 'pill', shape: 'right', color: 'yellow' },
+					],
+					nextPill: nextPill('yellow', 'blue'),
+				})
+			);
+
+			expect(events.filter(e => e.type === 'piece_entered')).toHaveLength(2);
+		});
+
+		it('documents the accepted blind spot: two real consecutive spawns sharing a color pair, with no descent observed, under-count as one', () => {
+			// Both disambiguating signals are unavailable here on purpose: the piece never shows
+			// descent (as if it locked flush against a tall stack), and by coincidence shares its
+			// color pair with the very next spawn -- see the header comment on RoundTracker for
+			// why this specific combination is the one case that isn't closed.
+			tracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('blue', 'blue') })
+			); // round_start
+			events.length = 0;
+
+			tracker.processFrame(
+				frame({ virus: 0, cells: bluePill, nextPill: nextPill('blue', 'blue') })
+			);
+			tracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('blue', 'blue') })
+			); // locks, no descent seen
+			tracker.processFrame(
+				frame({ virus: 0, cells: bluePill, nextPill: nextPill('blue', 'blue') })
+			);
+
+			expect(events.filter(e => e.type === 'piece_entered')).toHaveLength(1);
 		});
 
 		it('does not report a lone half in a non-spawn column (that would be garbage, which this deliberately does not detect yet)', () => {
