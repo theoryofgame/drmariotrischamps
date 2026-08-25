@@ -72,6 +72,19 @@ describe('RoundTracker', () => {
 			expect(events[1].detail).toEqual({ roundId: 1, virusCount: 4 });
 		});
 
+		it('caps the virus target at 84 for level 21+ instead of letting 4*(level+1) keep climbing', () => {
+			tracker.processFrame(frame({ level: 21, virus: 0 }));
+			expect(events[0].detail).toEqual({
+				roundId: 1,
+				level: 21,
+				virusTarget: 84,
+			});
+
+			// without the cap this would need virus: 88 to ever fire round_ready
+			tracker.processFrame(frame({ level: 21, virus: 84 }));
+			expect(events.map(e => e.type)).toEqual(['round_start', 'round_ready']);
+		});
+
 		it('fires round_end exactly once when the result leaves "playing", not every frame, with virus count frozen at its last real value', () => {
 			tracker.processFrame(frame({ level: 0, virus: 4 }));
 			events.length = 0;

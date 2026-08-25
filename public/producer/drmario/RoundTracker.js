@@ -33,8 +33,15 @@ const PHASE = {
 	ENDED: 'ended', // result left 'playing'; waiting for the next round to start
 };
 
+// 4*(level+1) holds up to level 20 (84 viruses); level 21+ is reported to stay capped at 84
+// rather than continuing to climb -- not yet confirmed against a capture, so worth rechecking
+// if a high-level round is ever seen not reaching its computed target.
+const MAX_VIRUS_COUNT = 84;
+
 function virusTarget(level) {
-	return level === null || level === undefined ? null : 4 * (level + 1);
+	return level === null || level === undefined
+		? null
+		: Math.min(4 * (level + 1), MAX_VIRUS_COUNT);
 }
 
 function isPillHalf(cell) {
