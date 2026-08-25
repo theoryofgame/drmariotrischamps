@@ -4,7 +4,10 @@ import path from 'path';
 import { PNG } from 'pngjs';
 import { fileURLToPath } from 'url';
 
-import { hasBottle } from '../public/producer/drmario/ScreenOCR.js';
+import {
+	hasBottle,
+	isTitleScreen,
+} from '../public/producer/drmario/ScreenOCR.js';
 import { FIELD, VERSUS } from '../public/producer/drmario/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -62,5 +65,30 @@ describe('DrMarioScreenOCR', () => {
 			expect(hasBottle(image, VERSUS.BOTTLE_1P)).toBe(true);
 			expect(hasBottle(image, VERSUS.BOTTLE_2P)).toBe(true);
 		});
+	});
+
+	describe('isTitleScreen', () => {
+		it('identifies the title screen', () => {
+			expect(isTitleScreen(loadFixture('title_screen.png'))).toBe(true);
+		});
+
+		it.each([
+			['pause', 'pause.png'],
+			['1P game-setup menu', 'menu_1p.png'],
+			['2P game-setup menu', 'menu_2p.png'],
+			['single-player gameplay', 'level00_frameA.png'],
+			// this level's own decorative checkerboard shares the title screen's *dark* green,
+			// so it's the sharpest false-positive risk on hand -- see ScreenOCR.js's header
+			[
+				'single-player gameplay, green-checkerboard level',
+				'level13_low_speed.png',
+			],
+			['versus gameplay', 'versus_reference.png'],
+		])(
+			'does not misidentify the %s as the title screen',
+			(_label, filename) => {
+				expect(isTitleScreen(loadFixture(filename))).toBe(false);
+			}
+		);
 	});
 });

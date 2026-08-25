@@ -24,7 +24,7 @@ import { scanBoard, identifyNextPill } from './BoardOCR.js';
 import { readNumber, readSpeed } from './PanelOCR.js';
 import { readCrowns } from './CrownOCR.js';
 import { readResult } from './ResultOCR.js';
-import { hasBottle } from './ScreenOCR.js';
+import { hasBottle, isTitleScreen } from './ScreenOCR.js';
 
 export class DrMarioOCR extends EventTarget {
 	constructor(config) {
@@ -97,10 +97,16 @@ export class DrMarioOCR extends EventTarget {
 			data: imageData.data,
 		};
 
+		// Whole-screen fact, not a per-bottle one, but attached to each per-bottle shape below (the
+		// same way hasBottle is) so RoundTracker -- which only ever sees one bottle's frames --
+		// can act on it: a soft reset jumps straight to the title screen mid-round, with none of
+		// the usual 'game_over'/'topout' result on the way.
+		const titleScreen = isTitleScreen(image);
+
 		const result =
 			this.layout === LAYOUT.VERSUS
-				? this.#scanVersus(image)
-				: this.#scanSinglePlayer(image);
+				? this.#scanVersus(image, titleScreen)
+				: this.#scanSinglePlayer(image, titleScreen);
 
 		this.dispatchEvent(new CustomEvent('frame', { detail: result }));
 
@@ -128,7 +134,7 @@ export class DrMarioOCR extends EventTarget {
 		return { hasBottle: true, result: readResult(image, field) };
 	}
 
-	#scanSinglePlayer(image) {
+	#scanSinglePlayer(image, titleScreen) {
 		const bottle = this.#scanBottle(image, FIELD);
 
 		if (!bottle.hasBottle) {
@@ -136,12 +142,14 @@ export class DrMarioOCR extends EventTarget {
 				layout: LAYOUT.SINGLE_PLAYER,
 				top: null,
 				score: null,
+				isTitleScreen: titleScreen,
 				...bottle,
 			};
 		}
 
 		return {
 			layout: LAYOUT.SINGLE_PLAYER,
+			isTitleScreen: titleScreen,
 			...bottle,
 			board: scanBoard(image),
 			nextPill: identifyNextPill(image),
@@ -153,13 +161,14 @@ export class DrMarioOCR extends EventTarget {
 		};
 	}
 
-	#scanVersusBottle(image, field, nextPillPosition, loc) {
+	#scanVersusBottle(image, field, nextPillPosition, loc, titleScreen) {
 		const bottle = this.#scanBottle(image, field);
 
-		if (!bottle.hasBottle) return bottle;
+		if (!bottle.hasBottle) return { ...bottle, isTitleScreen: titleScreen };
 
 		return {
 			...bottle,
+			isTitleScreen: titleScreen,
 			board: scanBoard(image, { field }),
 			nextPill: identifyNextPill(image, { position: nextPillPosition }),
 			level: readNumber(image, loc.level),
@@ -168,7 +177,7 @@ export class DrMarioOCR extends EventTarget {
 		};
 	}
 
-	#scanVersus(image) {
+	#scanVersus(image, titleScreen) {
 		const loc = REFERENCE_LOCATIONS_VERSUS;
 
 		return {
@@ -181,7 +190,8 @@ export class DrMarioOCR extends EventTarget {
 					level: loc.level_1p,
 					speed: loc.speed_1p,
 					virus: loc.virus_1p,
-				}
+				},
+				titleScreen
 			),
 			player2: this.#scanVersusBottle(
 				image,
@@ -191,7 +201,8 @@ export class DrMarioOCR extends EventTarget {
 					level: loc.level_2p,
 					speed: loc.speed_2p,
 					virus: loc.virus_2p,
-				}
+				},
+				titleScreen
 			),
 			crowns: readCrowns(image),
 		};

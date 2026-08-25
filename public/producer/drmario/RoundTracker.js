@@ -13,7 +13,11 @@
 //   ends the round for both, but reportedly (live, not yet captured) the other bottle's own
 //   result can keep reading 'playing' regardless -- one instance only ever sees its own bottle,
 //   so it has no way to notice that on its own. See endRound() below for how the consumer running
-//   both players' trackers closes that gap.
+//   both players' trackers closes that gap. Separately, a player can soft-reset the console
+//   mid-round via a controller command, which also isn't a `result` transition ResultOCR would
+//   ever see -- it jumps straight to the title screen instead. processFrame() handles that one
+//   directly (not via endRound()) since ScreenOCR.isTitleScreen() is a whole-screen fact already
+//   delivered to both bottles' frames identically, unlike a single bottle's own result.
 // - Virus count isn't monotonic the way Tetris's line count is: it counts *up* during each
 //   round's initial population (viruses are placed one at a time up to 4*(level+1) for that
 //   level) before counting down as the player clears them. See PHASE below.
@@ -129,8 +133,8 @@ export default class RoundTracker extends EventTarget {
 	#lastNextPillKey = null;
 	#descentBaseline = null;
 
-	// frame: { board, level, virus, result, hasBottle, ... } -- i.e. one bottle's worth of a
-	// DrMarioOCR result (single-player's top-level shape, or versus's player1/player2
+	// frame: { board, level, virus, result, hasBottle, isTitleScreen, ... } -- i.e. one bottle's
+	// worth of a DrMarioOCR result (single-player's top-level shape, or versus's player1/player2
 	// sub-object).
 	processFrame(frame) {
 		// No bottle on screen at all (pause/title/menu -- see ScreenOCR.js) means every other
@@ -138,8 +142,30 @@ export default class RoundTracker extends EventTarget {
 		// than as a frame to interpret: pause mid-round must not look like a round boundary just
 		// because `result` reads as something other than 'playing' while paused, and a title/menu
 		// screen sitting in front of the capture must not bootstrap a bogus round_start off
-		// ResultOCR's 'playing' default.
-		if (frame.hasBottle === false) return;
+		// ResultOCR's 'playing' default. The one exception is the title screen specifically: a
+		// player can soft-reset mid-round via a controller command, jumping straight there with
+		// none of the usual 'game_over'/'topout' result on the way, which would otherwise leave a
+		// round stuck open forever with no other signal it's over. Only ends a round that was
+		// actually in progress (POPULATING/PLAYING) -- e.g. not on startup, if the tracker's very
+		// first frame happens to be the title screen with no round to end yet.
+		if (frame.hasBottle === false) {
+			if (
+				frame.isTitleScreen &&
+				(this.#phase === PHASE.POPULATING || this.#phase === PHASE.PLAYING)
+			) {
+				this.#phase = PHASE.ENDED;
+				this.dispatchEvent(
+					new CustomEvent('round_end', {
+						detail: {
+							roundId: this.#roundId,
+							outcome: 'title_screen',
+							virusCount: this.#virusCount,
+						},
+					})
+				);
+			}
+			return;
+		}
 
 		if (frame.result !== 'playing') {
 			if (this.#phase !== PHASE.ENDED) {

@@ -518,5 +518,86 @@ describe('RoundTracker', () => {
 				},
 			]);
 		});
+
+		it('ends an in-progress round when a soft reset jumps straight to the title screen, with no game_over/topout on the way', () => {
+			tracker.processFrame(frame({ level: 0, virus: 4 })); // round_start + round_ready
+			events.length = 0;
+
+			tracker.processFrame({
+				hasBottle: false,
+				isTitleScreen: true,
+				result: null,
+				level: null,
+				virus: null,
+				board: null,
+			});
+
+			expect(events).toEqual([
+				{
+					type: 'round_end',
+					detail: { roundId: 1, outcome: 'title_screen', virusCount: 4 },
+				},
+			]);
+		});
+
+		it('does not fire round_end for the title screen if no round was actually in progress yet', () => {
+			// e.g. the tracker's very first frame happens to be the title screen -- nothing to end
+			tracker.processFrame({
+				hasBottle: false,
+				isTitleScreen: true,
+				result: null,
+				level: null,
+				virus: null,
+				board: null,
+			});
+
+			expect(events).toEqual([]);
+		});
+
+		it('does not double-fire round_end across consecutive title-screen frames', () => {
+			tracker.processFrame(frame({ level: 0, virus: 4 }));
+			events.length = 0;
+
+			const titleFrame = {
+				hasBottle: false,
+				isTitleScreen: true,
+				result: null,
+				level: null,
+				virus: null,
+				board: null,
+			};
+			tracker.processFrame(titleFrame);
+			tracker.processFrame(titleFrame);
+			tracker.processFrame(titleFrame);
+
+			expect(events).toEqual([
+				{
+					type: 'round_end',
+					detail: { roundId: 1, outcome: 'title_screen', virusCount: 4 },
+				},
+			]);
+		});
+
+		it('starts a new round normally once play resumes after a soft-reset round_end', () => {
+			tracker.processFrame(frame({ level: 0, virus: 4 }));
+			tracker.processFrame({
+				hasBottle: false,
+				isTitleScreen: true,
+				result: null,
+				level: null,
+				virus: null,
+				board: null,
+			});
+			events.length = 0;
+
+			tracker.processFrame(frame({ level: 2, virus: 0 }));
+
+			expect(events).toEqual([
+				{
+					type: 'round_start',
+					detail: { roundId: 2, level: 2, virusTarget: 12 },
+				},
+			]);
+		});
 	});
 });
