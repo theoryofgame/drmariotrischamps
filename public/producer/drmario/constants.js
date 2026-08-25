@@ -31,3 +31,49 @@ export const COLOR_PALETTE = {
 	blue: [0x64, 0xb0, 0xfe],
 	yellow: [0xbd, 0xbf, 0x00],
 };
+
+// A screen LAYOUT is a distinct arrangement of on-screen regions (score panels, bottle
+// position(s), etc), the same way Tetris's GAME_TYPE distinguishes 'classic' from
+// 'das_trainer'. Dr. Mario needs this too, but for a different reason: single-player shows one
+// bottle with a TOP/SCORE panel and a LEVEL/SPEED/VIRUS panel either side of it (reverse
+// engineered below), while versus mode shows two bottles side by side with a different set of
+// panels (relative score/win count, presumably no per-player TOP score). Versus has not been
+// captured or reverse engineered yet, so it isn't in CONFIGS -- selecting it should fail loudly
+// rather than silently reuse single-player's geometry, which would be wrong in basically every
+// coordinate.
+export const LAYOUT = {
+	SINGLE_PLAYER: 'single_player',
+	// VERSUS: 'versus', // TODO: needs its own reference captures + REFERENCE_LOCATIONS/CONFIGS entry
+};
+
+// Crop rectangles for the single-player screen's non-bottle regions, in the same native
+// 256x224 reference frame as FIELD above. All measured directly off a real capture (see
+// tests/fixtures/dr_mario/level00_frameA.png) the same way FIELD/templates.js were.
+//
+// Of these, only `field` has a working scanner today (BoardOCR.js). The rest are scaffolding:
+// their crop rectangles are real and verified, but nothing reads them yet --
+//   - `top`/`score`/`level`/`virus` are digit sequences. Building a digit template bank (the
+//     Dr. Mario equivalent of the Tetris OCR's digit templates, see ../TetrisOCR.js) needs
+//     reference captures covering all 10 digits; the captures on hand only show 0/1/2/4/5.
+//   - `speed` is not digits at all -- it's one of a small set of words (LOW/MED/HI), so it needs
+//     matching against whole-word templates rather than per-digit ones.
+export const REFERENCE_LOCATIONS = {
+	field: { crop: FIELD },
+	top: { crop: { x: 16, y: 56, w: 55, h: 7 }, pattern: 'DDDDDDD' },
+	score: { crop: { x: 16, y: 80, w: 55, h: 7 }, pattern: 'DDDDDDD' },
+	level: { crop: { x: 216, y: 144, w: 15, h: 7 }, pattern: 'DD' },
+	virus: { crop: { x: 216, y: 192, w: 15, h: 7 }, pattern: 'DD' },
+	speed: {
+		crop: { x: 208, y: 168, w: 23, h: 7 },
+		kind: 'enum',
+		values: ['low', 'med', 'hi'],
+	},
+};
+
+export const CONFIGS = {
+	[LAYOUT.SINGLE_PLAYER]: {
+		layout: LAYOUT.SINGLE_PLAYER,
+		reference: '/producer/drmario/reference_ui_single_player.png',
+		fields: ['field', 'top', 'score', 'level', 'virus', 'speed'],
+	},
+};
