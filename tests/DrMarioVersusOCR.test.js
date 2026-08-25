@@ -135,6 +135,21 @@ describe('Dr. Mario versus mode', () => {
 			expect(readNumber(versus, loc.virus_1p)).toBe(44);
 			expect(readNumber(versus, loc.virus_2p)).toBe(4);
 		});
+
+		it("reads player 1's speed as 'med', not just 'low' -- regression test for a live bug report", () => {
+			// speed_1p's crop was 1px too far right and 1px too narrow, clipping the leftmost
+			// column of the SPEED_TEMPLATES word shape -- a solid vertical stroke in every row of
+			// 'med' and 'hi', but not 'low' (whose own leftmost column is already blank), which is
+			// why the bug only showed up for some speed values and not others. This fixture is
+			// reconstructed from a real captured frame reported live (crop-and-scale replicated
+			// from the reporter's own calibration rectangle, not an emulator-clean screenshot like
+			// most other fixtures), specifically because it showed the failure and the reference
+			// fixture above happens to show 'low' for player 1, which the bug never affected.
+			const image = loadFixture('versus_p1_med_speed.png');
+			const loc = REFERENCE_LOCATIONS_VERSUS;
+			expect(readSpeed(image, loc.speed_1p)).toBe('med');
+			expect(readSpeed(image, loc.speed_2p)).toBe('med');
+		});
 	});
 
 	describe('crowns (round wins)', () => {

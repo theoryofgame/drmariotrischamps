@@ -123,7 +123,7 @@ export const REFERENCE_LOCATIONS_VERSUS = {
 	level_1p: { crop: { x: 110, y: 36, w: 15, h: 7 }, pattern: 'DD' },
 	level_2p: { crop: { x: 132, y: 36, w: 15, h: 7 }, pattern: 'DD' },
 	speed_1p: {
-		crop: { x: 97, y: 48, w: 22, h: 7 },
+		crop: { x: 96, y: 48, w: 23, h: 7 },
 		kind: 'enum',
 		values: ['low', 'med', 'hi'],
 	},
