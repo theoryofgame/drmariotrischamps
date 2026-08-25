@@ -149,6 +149,15 @@ function colorFor(cell) {
 	return rgb ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : '#f0f';
 }
 
+// Viruses and pills of the same color are otherwise indistinguishable at a glance in this
+// small a swatch, so viruses additionally get a dark center dot -- pills stay a plain square.
+function backgroundFor(cell) {
+	const color = colorFor(cell);
+	if (!cell || cell.type !== 'virus') return color;
+
+	return `radial-gradient(circle at center, #000 22%, ${color} 23%)`;
+}
+
 function renderBoard(container, board) {
 	container.innerHTML = '';
 	container.className = 'board-grid';
@@ -157,7 +166,7 @@ function renderBoard(container, board) {
 	board.flat().forEach(cell => {
 		const div = document.createElement('div');
 		div.className = 'board-cell';
-		div.style.background = colorFor(cell);
+		div.style.background = backgroundFor(cell);
 		div.title = JSON.stringify(cell);
 		container.appendChild(div);
 	});
