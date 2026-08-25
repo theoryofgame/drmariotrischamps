@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Dr. Mario OCR Test Harness</title>
+		<style>
+			body {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				background: #111;
+				color: #eee;
+				padding: 16px;
+			}
+			h1 {
+				font-size: 1.2rem;
+			}
+			h3 {
+				font-size: 1rem;
+				margin-bottom: 4px;
+			}
+			section {
+				margin-bottom: 20px;
+			}
+			#preview-canvas {
+				max-width: 100%;
+				border: 1px solid #444;
+				cursor: crosshair;
+			}
+			#reference-canvas-holder canvas {
+				image-rendering: pixelated;
+				border: 1px solid #444;
+			}
+			.board-grid {
+				display: grid;
+				gap: 1px;
+				background: #333;
+				border: 1px solid #444;
+				width: max-content;
+			}
+			.board-cell {
+				width: 12px;
+				height: 12px;
+			}
+			.next-pill-cell {
+				display: inline-block;
+				width: 16px;
+				height: 16px;
+				margin-right: 2px;
+				border: 1px solid #444;
+				vertical-align: middle;
+			}
+			.stats {
+				font-size: 0.85rem;
+				color: #ccc;
+			}
+			.players {
+				display: flex;
+				gap: 32px;
+			}
+			label {
+				margin-right: 4px;
+			}
+			input[type='number'] {
+				width: 64px;
+			}
+			.hint {
+				color: #999;
+				font-size: 0.85rem;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Dr. Mario OCR Test Harness</h1>
+		<p class="hint">
+			Standalone page for testing BoardOCR/PanelOCR/CrownOCR against live video.
+			Not part of the producer capture/broadcast pipeline -- purely for visually
+			confirming identification against a real capture source.
+		</p>
+
+		<section id="controls">
+			<label for="layout">Layout</label>
+			<select id="layout">
+				<option value="single_player">Single Player</option>
+				<option value="versus">Versus</option>
+			</select>
+
+			<label for="devices">Camera/capture device</label>
+			<select id="devices"></select>
+			<button id="use-camera">Use Camera</button>
+			<button id="use-screen">Use Screen/Window Capture</button>
+		</section>
+
+		<section id="calibration-section">
+			<h3>1. Calibrate</h3>
+			<p class="hint">
+				Click the top-left corner of the NES screen in the preview below, then
+				click the bottom-right corner. Fine-tune with the fields if needed.
+				Saved automatically.
+			</p>
+			<canvas id="preview-canvas"></canvas>
+			<div>
+				<label for="cal-x">X</label><input id="cal-x" type="number" />
+				<label for="cal-y">Y</label><input id="cal-y" type="number" />
+				<label for="cal-w">W</label><input id="cal-w" type="number" />
+				<label for="cal-h">H</label><input id="cal-h" type="number" />
+				<button id="cal-reset">Reset</button>
+			</div>
+		</section>
+
+		<section id="reference-section">
+			<h3>2. Normalized view (what the OCR actually reads)</h3>
+			<div id="reference-canvas-holder"></div>
+		</section>
+
+		<section id="results-section">
+			<h3>3. Decoded state</h3>
+			<div id="results"></div>
+		</section>
+
+		<video id="video" style="display: none" muted playsinline></video>
+
+		<script type="module" src="./harness.js"></script>
+	</body>
+</html>
