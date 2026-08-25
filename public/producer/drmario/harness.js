@@ -111,6 +111,18 @@ function buildTrackers() {
 		trackers.player2.addEventListener('round_end', event =>
 			trackers.player1.endRound(`opponent_${event.detail.outcome}`)
 		);
+
+		// Same idea for the next round's start: the bottle that ended via endRound() (not its own
+		// result) waits for the other's own real round_start rather than self-detecting off its
+		// own frame data, which can already look like a new round before the affected bottle's own
+		// win/loss overlay has even cleared. syncRoundStart() is a no-op unless that tracker is
+		// actually waiting for one, so this can't clobber a tracker that started on its own.
+		trackers.player1.addEventListener('round_start', event =>
+			trackers.player2.syncRoundStart(event.detail)
+		);
+		trackers.player2.addEventListener('round_start', event =>
+			trackers.player1.syncRoundStart(event.detail)
+		);
 	} else {
 		trackers = { single: new RoundTracker() };
 		wireTracker(trackers.single, 'SP');

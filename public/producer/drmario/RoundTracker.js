@@ -13,7 +13,14 @@
 //   ends the round for both, but reportedly (live, not yet captured) the other bottle's own
 //   result can keep reading 'playing' regardless -- one instance only ever sees its own bottle,
 //   so it has no way to notice that on its own. See endRound() below for how the consumer running
-//   both players' trackers closes that gap. Separately, a player can soft-reset the console
+//   both players' trackers closes that gap. The reverse desync also happens at the *start* of the
+//   next round, confirmed live: the unaffected bottle's own board/panel data can already reflect
+//   the new round before the other bottle's own win/loss overlay has even finished (that bottle's
+//   own `result` only reads 'playing' again once its overlay clears), so the unaffected bottle
+//   would otherwise self-detect round_start a real amount of time before its actually-losing
+//   counterpart does, even though the game itself starts both at once. See syncRoundStart() for
+//   how the consumer relays the affected bottle's own (later, real) round_start onto the other
+//   instead of letting it self-detect early. Separately, a player can soft-reset the console
 //   mid-round via a controller command, which also isn't a `result` transition ResultOCR would
 //   ever see -- it jumps straight to the title screen instead. processFrame() handles that one
 //   directly (not via endRound()) since ScreenOCR.isTitleScreen() is a whole-screen fact already
@@ -158,6 +165,7 @@ export default class RoundTracker extends EventTarget {
 	#lastNextPillKey = null;
 	#descentBaseline = null;
 	#topRowEmpty = new Array(COLS).fill(true); // last frame's row-0 occupancy, per column
+	#endedExternally = false; // ended via endRound(), not this bottle's own result -- see syncRoundStart()
 
 	// frame: { board, level, virus, result, hasBottle, isTitleScreen, ... } -- i.e. one bottle's
 	// worth of a DrMarioOCR result (single-player's top-level shape, or versus's player1/player2
@@ -210,26 +218,12 @@ export default class RoundTracker extends EventTarget {
 		}
 
 		if (this.#phase === PHASE.UNKNOWN || this.#phase === PHASE.ENDED) {
-			this.#roundId++;
-			this.#phase = PHASE.POPULATING;
-			this.#level = frame.level ?? null;
-			this.#virusTargetCount = virusTarget(this.#level);
-			this.#virusCount = frame.virus ?? null;
-			this.#spawnPairOccupied = false;
-			this.#armed = true;
-			this.#lastNextPillKey = null;
-			this.#descentBaseline = null;
-			this.#topRowEmpty = new Array(COLS).fill(true);
+			// Waiting for the linked tracker's own (later, real) round_start to be relayed via
+			// syncRoundStart() instead of self-detecting off this bottle's own frame data -- see
+			// the header comment and syncRoundStart() for why.
+			if (this.#endedExternally) return;
 
-			this.dispatchEvent(
-				new CustomEvent('round_start', {
-					detail: {
-						roundId: this.#roundId,
-						level: this.#level,
-						virusTarget: this.#virusTargetCount,
-					},
-				})
-			);
+			this.#startRound(this.#roundId + 1, frame.level ?? null);
 		}
 
 		if (this.#phase === PHASE.POPULATING) {
@@ -286,19 +280,56 @@ export default class RoundTracker extends EventTarget {
 	// captures exist yet of exactly what that bottle shows in the meantime). Since one instance
 	// only ever sees its own bottle's frames, it has no way to notice this on its own -- the
 	// consumer running both players' trackers needs to call this on the *other* tracker when one
-	// instance's own round_end fires (see harness.js's versus wiring), so the linked instance
-	// also ends its round (and, on its own very next 'playing' frame -- e.g. the next round's
-	// virus population starting -- correctly detects a new round_start on its own, the same way
-	// it would after any ordinary round_end).
+	// instance's own round_end fires (see harness.js's versus wiring), so the linked instance also
+	// ends its round. It then *waits* rather than self-detecting the next round_start off its own
+	// frame data, since that data can already reflect the new round before the affected bottle's
+	// own overlay has even cleared (confirmed live) -- see syncRoundStart().
 	endRound(outcome) {
 		if (this.#phase === PHASE.ENDED) return; // already ended via its own result reading
 		this.#phase = PHASE.ENDED;
+		this.#endedExternally = true;
 		this.dispatchEvent(
 			new CustomEvent('round_end', {
 				detail: {
 					roundId: this.#roundId,
 					outcome,
 					virusCount: this.#virusCount,
+				},
+			})
+		);
+	}
+
+	// Counterpart to endRound(): once the linked tracker's own round_start naturally fires (its
+	// own result really did leave and return to 'playing'), the consumer relays it here (see
+	// harness.js's versus wiring) so this tracker's round numbering and level/target line up with
+	// it exactly, instead of this bottle self-detecting a moment early off its own frame data. A
+	// no-op unless this tracker is actually waiting for one -- i.e. its last round ended via
+	// endRound(), not its own result -- so two bottles that happen to end and restart naturally at
+	// the same time (e.g. a shared GAME OVER screen) don't clobber each other's own detection.
+	syncRoundStart({ roundId, level }) {
+		if (this.#phase !== PHASE.ENDED || !this.#endedExternally) return;
+		this.#startRound(roundId, level);
+	}
+
+	#startRound(roundId, level) {
+		this.#roundId = roundId;
+		this.#phase = PHASE.POPULATING;
+		this.#level = level ?? null;
+		this.#virusTargetCount = virusTarget(this.#level);
+		this.#virusCount = null;
+		this.#spawnPairOccupied = false;
+		this.#armed = true;
+		this.#lastNextPillKey = null;
+		this.#descentBaseline = null;
+		this.#topRowEmpty = new Array(COLS).fill(true);
+		this.#endedExternally = false;
+
+		this.dispatchEvent(
+			new CustomEvent('round_start', {
+				detail: {
+					roundId: this.#roundId,
+					level: this.#level,
+					virusTarget: this.#virusTargetCount,
 				},
 			})
 		);

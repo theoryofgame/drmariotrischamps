@@ -160,15 +160,27 @@ describe('RoundTracker', () => {
 			expect(events).toEqual([]);
 		});
 
-		it('picks up a new round normally after endRound(), the same as after an ordinary round_end', () => {
+		it('does not self-detect a new round after endRound() -- waits for syncRoundStart() instead, even once its own board data already looks like a new round', () => {
 			tracker.processFrame(frame({ level: 0, virus: 4 }));
 			tracker.endRound('opponent_topout');
 			events.length = 0;
 
-			// versus shares one virus/pill seed between both bottles, so the next round's
-			// population can start appearing here even though this bottle's own `result` never
-			// left 'playing'
+			// this bottle's own board/panel can already reflect the next round before the
+			// opponent's own win/loss overlay has cleared (confirmed live) -- self-detecting off
+			// that would fire a round_start a real amount of time before the actually-affected
+			// bottle's own (later, real) round_start does, which is the bug being fixed here
 			tracker.processFrame(frame({ level: 3, virus: 0 }));
+			tracker.processFrame(frame({ level: 3, virus: 5 }));
+
+			expect(events).toEqual([]);
+		});
+
+		it('syncRoundStart() starts the next round with the given roundId/level once the linked tracker relays its own real round_start', () => {
+			tracker.processFrame(frame({ level: 0, virus: 4 }));
+			tracker.endRound('opponent_topout');
+			events.length = 0;
+
+			tracker.syncRoundStart({ roundId: 2, level: 3, virusTarget: 16 });
 
 			expect(events).toEqual([
 				{
@@ -176,6 +188,26 @@ describe('RoundTracker', () => {
 					detail: { roundId: 2, level: 3, virusTarget: 16 },
 				},
 			]);
+
+			// and behaves like a normal round from here on, e.g. still reaching round_ready off
+			// this bottle's own subsequent frames
+			events.length = 0;
+			tracker.processFrame(frame({ level: 3, virus: 16 }));
+			expect(events).toEqual([
+				{
+					type: 'round_ready',
+					detail: { roundId: 2, virusCount: 16 },
+				},
+			]);
+		});
+
+		it('syncRoundStart() is a no-op if this tracker was not actually waiting for one', () => {
+			tracker.processFrame(frame({ level: 0, virus: 4 })); // round_start, self-detected
+			events.length = 0;
+
+			tracker.syncRoundStart({ roundId: 99, level: 10, virusTarget: 44 });
+
+			expect(events).toEqual([]);
 		});
 
 		it('keeps picking up level (and its virus target) on later frames if it was unreadable on the round_start frame, confirming it via round_level_confirmed', () => {
