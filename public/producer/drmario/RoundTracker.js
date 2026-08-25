@@ -17,11 +17,17 @@
 //   play is detected the same way -- not by diffing the next-pill preview, which would miss a
 //   repeat (Dr. Mario is known for "rushes": long runs of the identical pill color/shape, where
 //   the preview wouldn't visibly change even though a new piece did spawn) -- but by watching
-//   the whole top row for a cell going from unoccupied to holding a pill half. Generalized to
-//   the whole row rather than just the two spawn columns because that's also the primitive a
-//   future garbage-tracking feature would need (garbage arrives as loose halves, potentially in
-//   other columns), even though the actual garbage mechanic hasn't been captured/reverse
-//   engineered yet.
+//   the top row for pill content appearing where there was none. This has to be tracked as one
+//   aggregate "is anything in row 0" flag, not per column: a piece can sit in row 0 for several
+//   frames while the player shifts/rotates it before it starts falling, and a *per-column* check
+//   (an earlier version of this file) misreads every column the same piece slides through as a
+//   separate new piece. The aggregate flag only flips on when row 0 goes from fully empty to
+//   holding something, so lateral movement within row 0 -- which never empties it in between --
+//   doesn't re-trigger. This also means it currently can't tell a genuinely new piece from
+//   garbage arriving in another column *while* the active piece is still sitting in row 0, since
+//   both would just look like "row 0 still occupied" -- acceptable for now since the actual
+//   garbage mechanic hasn't been captured/reverse engineered yet to know if that overlap is even
+//   possible.
 //
 // One instance tracks one bottle. Versus mode (two independent bottles) should use two
 // instances, the same way Tetris runs one GameTracker per OcrPlayer.
@@ -54,7 +60,7 @@ export default class RoundTracker extends EventTarget {
 	#level = null;
 	#virusTargetCount = null;
 	#virusCount = null;
-	#topRowOccupied = [];
+	#topRowOccupied = false;
 
 	// frame: { board, level, virus, result, ... } -- i.e. one bottle's worth of a DrMarioOCR
 	// result (single-player's top-level shape, or versus's player1/player2 sub-object).
@@ -78,10 +84,10 @@ export default class RoundTracker extends EventTarget {
 		if (this.#phase === PHASE.UNKNOWN || this.#phase === PHASE.ENDED) {
 			this.#roundId++;
 			this.#phase = PHASE.POPULATING;
-			this.#level = frame.level;
-			this.#virusTargetCount = virusTarget(frame.level);
+			this.#level = frame.level ?? null;
+			this.#virusTargetCount = virusTarget(this.#level);
 			this.#virusCount = frame.virus ?? null;
-			this.#topRowOccupied = frame.board[0].map(() => false);
+			this.#topRowOccupied = false;
 
 			this.dispatchEvent(
 				new CustomEvent('round_start', {
@@ -95,6 +101,18 @@ export default class RoundTracker extends EventTarget {
 		}
 
 		if (this.#phase === PHASE.POPULATING) {
+			// level (and the target derived from it) might not have been readable yet on the
+			// frame round_start fired from -- keep picking it up until it is, rather than
+			// leaving this round permanently unable to reach round_ready.
+			if (
+				this.#level === null &&
+				frame.level !== null &&
+				frame.level !== undefined
+			) {
+				this.#level = frame.level;
+				this.#virusTargetCount = virusTarget(this.#level);
+			}
+
 			this.#virusCount = frame.virus ?? this.#virusCount;
 
 			if (
@@ -117,25 +135,27 @@ export default class RoundTracker extends EventTarget {
 	}
 
 	#detectPieceEntries(board) {
-		const topRow = board[0];
+		const cells = board[0]
+			.map((cell, col) => ({ col, cell }))
+			.filter(({ cell }) => isPillHalf(cell));
 
-		topRow.forEach((cell, col) => {
-			const occupied = isPillHalf(cell);
+		const occupied = cells.length > 0;
 
-			if (occupied && !this.#topRowOccupied[col]) {
-				this.dispatchEvent(
-					new CustomEvent('piece_entered', {
-						detail: {
-							roundId: this.#roundId,
+		if (occupied && !this.#topRowOccupied) {
+			this.dispatchEvent(
+				new CustomEvent('piece_entered', {
+					detail: {
+						roundId: this.#roundId,
+						cells: cells.map(({ col, cell }) => ({
 							col,
 							shape: cell.shape,
 							color: cell.color,
-						},
-					})
-				);
-			}
+						})),
+					},
+				})
+			);
+		}
 
-			this.#topRowOccupied[col] = occupied;
-		});
+		this.#topRowOccupied = occupied;
 	}
 }

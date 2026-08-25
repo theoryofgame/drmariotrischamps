@@ -59,10 +59,19 @@ const eventLog = document.getElementById('event-log');
 const MAX_LOG_LINES = 100;
 let trackers = {};
 
+function formatDetailValue(key, value) {
+	// piece_entered's `cells` is an array of { col, shape, color } -- the generic k=v
+	// stringification below would just print "[object Object]" for it.
+	if (key === 'cells' && Array.isArray(value)) {
+		return value.map(c => `col${c.col}:${c.shape}:${c.color}`).join(',');
+	}
+	return value;
+}
+
 function logTrackerEvent(label, event) {
 	const line = document.createElement('div');
 	const detail = Object.entries(event.detail)
-		.map(([k, v]) => `${k}=${v}`)
+		.map(([k, v]) => `${k}=${formatDetailValue(k, v)}`)
 		.join(' ');
 	line.textContent = `[${label}] ${event.type} ${detail}`;
 	eventLog.prepend(line);

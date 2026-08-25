@@ -117,30 +117,48 @@ describe('RoundTracker', () => {
 				},
 			]);
 		});
+
+		it('keeps picking up level (and its virus target) on later frames if it was unreadable on the round_start frame', () => {
+			// e.g. an unstable read right at a round boundary -- reported live, not yet tied to
+			// a specific captured cause (possibly whatever screen precedes round start)
+			tracker.processFrame(frame({ level: null, virus: null }));
+			expect(events).toEqual([
+				{
+					type: 'round_start',
+					detail: { roundId: 1, level: null, virusTarget: null },
+				},
+			]);
+
+			// level becomes readable on a later frame, still mid-population
+			tracker.processFrame(frame({ level: 5, virus: 2 }));
+			tracker.processFrame(frame({ level: 5, virus: 24 })); // target = 4 * (5 + 1) = 24
+
+			expect(events.map(e => e.type)).toEqual(['round_start', 'round_ready']);
+			expect(events[1].detail).toEqual({ roundId: 1, virusCount: 24 });
+		});
 	});
 
 	describe('piece entry detection', () => {
-		it('fires once when a pill half appears at the top row, not on every frame it stays there', () => {
+		const bluePill = [
+			{ col: 3, row: 0, type: 'pill', shape: 'left', color: 'blue' },
+			{ col: 4, row: 0, type: 'pill', shape: 'right', color: 'blue' },
+		];
+
+		it('fires once, with both halves, when a pill appears at the top row -- not on every frame it stays there', () => {
 			tracker.processFrame(frame({ virus: 0 })); // round_start, empty board
 			events.length = 0;
 
-			tracker.processFrame(
-				frame({
-					virus: 0,
-					cells: [
-						{ col: 3, row: 0, type: 'pill', shape: 'left', color: 'blue' },
-						{ col: 4, row: 0, type: 'pill', shape: 'right', color: 'blue' },
-					],
-				})
-			);
+			tracker.processFrame(frame({ virus: 0, cells: bluePill }));
 			expect(events).toEqual([
 				{
 					type: 'piece_entered',
-					detail: { roundId: 1, col: 3, shape: 'left', color: 'blue' },
-				},
-				{
-					type: 'piece_entered',
-					detail: { roundId: 1, col: 4, shape: 'right', color: 'blue' },
+					detail: {
+						roundId: 1,
+						cells: [
+							{ col: 3, shape: 'left', color: 'blue' },
+							{ col: 4, shape: 'right', color: 'blue' },
+						],
+					},
 				},
 			]);
 
@@ -151,14 +169,39 @@ describe('RoundTracker', () => {
 			expect(events).toEqual([]); // no re-fire just because time passed
 		});
 
-		it("detects each spawn of a 'rush' of identically-colored pills, since detection is position-based, not color-diff-based", () => {
+		it('does NOT re-fire while the player shifts the same piece sideways across row 0 before it falls', () => {
+			// reproduces a live bug report: moving/rotating a piece that's still sitting in row
+			// 0 slid it through columns 3 -> 2 -> 1, and each new column falsely looked like a
+			// separate new piece under the old per-column detection
 			tracker.processFrame(frame({ virus: 0 })); // round_start
 			events.length = 0;
 
-			const bluePill = [
-				{ col: 3, row: 0, type: 'pill', shape: 'left', color: 'blue' },
-				{ col: 4, row: 0, type: 'pill', shape: 'right', color: 'blue' },
-			];
+			tracker.processFrame(frame({ virus: 0, cells: bluePill })); // spawns at col 3/4
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 2, row: 0, type: 'pill', shape: 'left', color: 'blue' },
+						{ col: 3, row: 0, type: 'pill', shape: 'right', color: 'blue' },
+					],
+				})
+			); // shifted left by 1
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 1, row: 0, type: 'pill', shape: 'left', color: 'blue' },
+						{ col: 2, row: 0, type: 'pill', shape: 'right', color: 'blue' },
+					],
+				})
+			); // shifted left again
+
+			expect(events.filter(e => e.type === 'piece_entered')).toHaveLength(1);
+		});
+
+		it("detects each spawn of a 'rush' of identically-colored pills, since detection is position-based, not color-diff-based", () => {
+			tracker.processFrame(frame({ virus: 0 })); // round_start
+			events.length = 0;
 
 			// first blue-blue pill spawns, then clears the top row as it falls
 			tracker.processFrame(frame({ virus: 0, cells: bluePill }));
@@ -167,7 +210,7 @@ describe('RoundTracker', () => {
 			// second blue-blue pill spawns -- identical color to the last one
 			tracker.processFrame(frame({ virus: 0, cells: bluePill }));
 
-			expect(events.filter(e => e.type === 'piece_entered')).toHaveLength(4); // 2 columns x 2 spawns
+			expect(events.filter(e => e.type === 'piece_entered')).toHaveLength(2);
 		});
 
 		it('detects a lone half entering a column other than the spawn columns (groundwork for garbage)', () => {
@@ -186,7 +229,10 @@ describe('RoundTracker', () => {
 			expect(events).toEqual([
 				{
 					type: 'piece_entered',
-					detail: { roundId: 1, col: 0, shape: 'single', color: 'red' },
+					detail: {
+						roundId: 1,
+						cells: [{ col: 0, shape: 'single', color: 'red' }],
+					},
 				},
 			]);
 		});
