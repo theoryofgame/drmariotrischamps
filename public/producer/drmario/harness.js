@@ -219,6 +219,11 @@ function backgroundFor(cell) {
 
 function renderBoard(container, board) {
 	container.innerHTML = '';
+
+	// null when the frame's bottle isn't on screen at all (pause/title/menu -- see
+	// ScreenOCR.js's hasBottle) -- leave the grid blank rather than reading board[0].length.
+	if (!board) return;
+
 	container.className = 'board-grid';
 	container.style.gridTemplateColumns = `repeat(${board[0].length}, 12px)`;
 
@@ -233,6 +238,8 @@ function renderBoard(container, board) {
 
 function renderNextPill(container, nextPill) {
 	container.innerHTML = '';
+
+	if (!nextPill) return;
 
 	['left', 'right'].forEach(slot => {
 		const span = document.createElement('span');
@@ -274,10 +281,16 @@ function buildResultsSkeleton() {
 }
 buildResultsSkeleton();
 
-// 'playing' is the ordinary state and not worth calling out; the others are.
+// 'playing' is the ordinary state and not worth calling out; the others are. null means no
+// bottle on screen at all (pause/title/menu -- see ScreenOCR.js's hasBottle).
 function renderRoundState(element, state) {
-	element.textContent =
-		state === 'playing' ? '' : state.replace('_', ' ').toUpperCase();
+	if (state === 'playing') {
+		element.textContent = '';
+	} else if (state === null) {
+		element.textContent = 'NO BOTTLE (PAUSED/MENU)';
+	} else {
+		element.textContent = state.replace('_', ' ').toUpperCase();
+	}
 }
 
 function renderResult(result) {

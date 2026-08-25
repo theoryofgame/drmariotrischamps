@@ -25,8 +25,9 @@ function frame({
 	level = 0,
 	virus = null,
 	cells = [],
+	hasBottle = true,
 } = {}) {
-	return { result, level, virus, board: boardWith(cells) };
+	return { result, level, virus, board: boardWith(cells), hasBottle };
 }
 
 function collectEvents(tracker, ...types) {
@@ -260,6 +261,67 @@ describe('RoundTracker', () => {
 			);
 
 			expect(events.filter(e => e.type === 'piece_entered')).toEqual([]);
+		});
+	});
+
+	describe('frames with no bottle on screen (pause/title/menu -- see ScreenOCR.js)', () => {
+		it('does not start a round off a title/menu screen sitting in front of the capture', () => {
+			// hasBottle:false, as DrMarioOCR reports for a screen with no bottle at all --
+			// everything else on the frame is null and must not be interpreted
+			tracker.processFrame({
+				hasBottle: false,
+				result: null,
+				level: null,
+				virus: null,
+				board: null,
+			});
+
+			expect(events).toEqual([]);
+		});
+
+		it('freezes tracker state across a pause mid-round instead of treating it as a round boundary', () => {
+			tracker.processFrame(frame({ level: 0, virus: 4 })); // round_start + round_ready
+			events.length = 0;
+
+			tracker.processFrame({
+				hasBottle: false,
+				result: null,
+				level: null,
+				virus: null,
+				board: null,
+			});
+			tracker.processFrame({
+				hasBottle: false,
+				result: null,
+				level: null,
+				virus: null,
+				board: null,
+			});
+			expect(events).toEqual([]); // no round_end just because the screen went black
+
+			// unpausing back to ordinary play shouldn't look like a new round either
+			tracker.processFrame(
+				frame({
+					level: 0,
+					virus: 4,
+					cells: [
+						{ col: 3, row: 0, type: 'pill', shape: 'left', color: 'blue' },
+						{ col: 4, row: 0, type: 'pill', shape: 'right', color: 'blue' },
+					],
+				})
+			);
+			expect(events).toEqual([
+				{
+					type: 'piece_entered',
+					detail: {
+						roundId: 1,
+						cells: [
+							{ col: 3, shape: 'left', color: 'blue' },
+							{ col: 4, shape: 'right', color: 'blue' },
+						],
+					},
+				},
+			]);
 		});
 	});
 });

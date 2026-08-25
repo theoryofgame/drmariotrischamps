@@ -73,9 +73,18 @@ export default class RoundTracker extends EventTarget {
 	#virusCount = null;
 	#spawnPairOccupied = false;
 
-	// frame: { board, level, virus, result, ... } -- i.e. one bottle's worth of a DrMarioOCR
-	// result (single-player's top-level shape, or versus's player1/player2 sub-object).
+	// frame: { board, level, virus, result, hasBottle, ... } -- i.e. one bottle's worth of a
+	// DrMarioOCR result (single-player's top-level shape, or versus's player1/player2
+	// sub-object).
 	processFrame(frame) {
+		// No bottle on screen at all (pause/title/menu -- see ScreenOCR.js) means every other
+		// field on `frame` is null and tells us nothing real. Treat it as a complete no-op rather
+		// than as a frame to interpret: pause mid-round must not look like a round boundary just
+		// because `result` reads as something other than 'playing' while paused, and a title/menu
+		// screen sitting in front of the capture must not bootstrap a bogus round_start off
+		// ResultOCR's 'playing' default.
+		if (frame.hasBottle === false) return;
+
 		if (frame.result !== 'playing') {
 			if (this.#phase !== PHASE.ENDED) {
 				this.#phase = PHASE.ENDED;

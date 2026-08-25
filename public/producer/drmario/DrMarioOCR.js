@@ -24,6 +24,7 @@ import { scanBoard, identifyNextPill } from './BoardOCR.js';
 import { readNumber, readSpeed } from './PanelOCR.js';
 import { readCrowns } from './CrownOCR.js';
 import { readResult } from './ResultOCR.js';
+import { hasBottle } from './ScreenOCR.js';
 
 export class DrMarioOCR extends EventTarget {
 	constructor(config) {
@@ -106,10 +107,42 @@ export class DrMarioOCR extends EventTarget {
 		return result;
 	}
 
+	// Screens with no bottle at all (pause, title, the 1P/2P setup menu -- see ScreenOCR.js)
+	// would otherwise still get read by every function below, which don't know any better and
+	// just produce misleading output pointed at the wrong thing (an all-black pause screen
+	// reads as an empty board; ResultOCR's default reads as an ordinary in-progress round).
+	// Checking first avoids both the wasted work and the bad data.
+	#scanBottle(image, field) {
+		if (!hasBottle(image, field)) {
+			return {
+				hasBottle: false,
+				result: null,
+				board: null,
+				nextPill: null,
+				level: null,
+				virus: null,
+				speed: null,
+			};
+		}
+
+		return { hasBottle: true, result: readResult(image, field) };
+	}
+
 	#scanSinglePlayer(image) {
+		const bottle = this.#scanBottle(image, FIELD);
+
+		if (!bottle.hasBottle) {
+			return {
+				layout: LAYOUT.SINGLE_PLAYER,
+				top: null,
+				score: null,
+				...bottle,
+			};
+		}
+
 		return {
 			layout: LAYOUT.SINGLE_PLAYER,
-			result: readResult(image, FIELD),
+			...bottle,
 			board: scanBoard(image),
 			nextPill: identifyNextPill(image),
 			top: readNumber(image, REFERENCE_LOCATIONS.top),
@@ -120,27 +153,46 @@ export class DrMarioOCR extends EventTarget {
 		};
 	}
 
+	#scanVersusBottle(image, field, nextPillPosition, loc) {
+		const bottle = this.#scanBottle(image, field);
+
+		if (!bottle.hasBottle) return bottle;
+
+		return {
+			...bottle,
+			board: scanBoard(image, { field }),
+			nextPill: identifyNextPill(image, { position: nextPillPosition }),
+			level: readNumber(image, loc.level),
+			speed: readSpeed(image, loc.speed),
+			virus: readNumber(image, loc.virus),
+		};
+	}
+
 	#scanVersus(image) {
 		const loc = REFERENCE_LOCATIONS_VERSUS;
 
 		return {
 			layout: LAYOUT.VERSUS,
-			player1: {
-				result: readResult(image, VERSUS.BOTTLE_1P),
-				board: scanBoard(image, { field: VERSUS.BOTTLE_1P }),
-				nextPill: identifyNextPill(image, { position: VERSUS.NEXT_PILL_1P }),
-				level: readNumber(image, loc.level_1p),
-				speed: readSpeed(image, loc.speed_1p),
-				virus: readNumber(image, loc.virus_1p),
-			},
-			player2: {
-				result: readResult(image, VERSUS.BOTTLE_2P),
-				board: scanBoard(image, { field: VERSUS.BOTTLE_2P }),
-				nextPill: identifyNextPill(image, { position: VERSUS.NEXT_PILL_2P }),
-				level: readNumber(image, loc.level_2p),
-				speed: readSpeed(image, loc.speed_2p),
-				virus: readNumber(image, loc.virus_2p),
-			},
+			player1: this.#scanVersusBottle(
+				image,
+				VERSUS.BOTTLE_1P,
+				VERSUS.NEXT_PILL_1P,
+				{
+					level: loc.level_1p,
+					speed: loc.speed_1p,
+					virus: loc.virus_1p,
+				}
+			),
+			player2: this.#scanVersusBottle(
+				image,
+				VERSUS.BOTTLE_2P,
+				VERSUS.NEXT_PILL_2P,
+				{
+					level: loc.level_2p,
+					speed: loc.speed_2p,
+					virus: loc.virus_2p,
+				}
+			),
 			crowns: readCrowns(image),
 		};
 	}
