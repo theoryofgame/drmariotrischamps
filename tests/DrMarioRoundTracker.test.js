@@ -62,7 +62,8 @@ describe('RoundTracker', () => {
 			'round_level_confirmed',
 			'round_ready',
 			'round_end',
-			'piece_entered'
+			'piece_entered',
+			'garbage_entered'
 		);
 	});
 
@@ -598,6 +599,178 @@ describe('RoundTracker', () => {
 					detail: { roundId: 2, level: 2, virusTarget: 12 },
 				},
 			]);
+		});
+	});
+
+	describe('garbage entry detection', () => {
+		it('fires with one entry when a single loose half appears in a previously-empty column', () => {
+			tracker.processFrame(frame({ virus: 0 })); // round_start
+			events.length = 0;
+
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 0, row: 0, type: 'pill', shape: 'single', color: 'red' },
+					],
+				})
+			);
+
+			expect(events).toEqual([
+				{
+					type: 'garbage_entered',
+					detail: {
+						roundId: 1,
+						cells: [{ col: 0, shape: 'single', color: 'red' }],
+					},
+				},
+			]);
+		});
+
+		it('batches multiple halves that enter on the same frame into one event', () => {
+			tracker.processFrame(frame({ virus: 0 }));
+			events.length = 0;
+
+			// 2, 3, or 4 can enter at once, always with at least a column of gap between them
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 0, row: 0, type: 'pill', shape: 'single', color: 'red' },
+						{ col: 2, row: 0, type: 'pill', shape: 'single', color: 'blue' },
+						{ col: 6, row: 0, type: 'pill', shape: 'single', color: 'yellow' },
+					],
+				})
+			);
+
+			expect(events).toEqual([
+				{
+					type: 'garbage_entered',
+					detail: {
+						roundId: 1,
+						cells: [
+							{ col: 0, shape: 'single', color: 'red' },
+							{ col: 2, shape: 'single', color: 'blue' },
+							{ col: 6, shape: 'single', color: 'yellow' },
+						],
+					},
+				},
+			]);
+		});
+
+		it('does not re-fire on later frames while the same garbage half just sits there', () => {
+			tracker.processFrame(frame({ virus: 0 }));
+			events.length = 0;
+
+			const cells = [
+				{ col: 0, row: 0, type: 'pill', shape: 'single', color: 'red' },
+			];
+			tracker.processFrame(frame({ virus: 0, cells }));
+			events.length = 0;
+
+			tracker.processFrame(frame({ virus: 0, cells }));
+			tracker.processFrame(frame({ virus: 0, cells }));
+
+			expect(events).toEqual([]);
+		});
+
+		it('does not report a garbage half landing on a column that was already occupied (an overwrite, not a new entry)', () => {
+			tracker.processFrame(
+				frame({
+					virus: 2,
+					cells: [{ col: 0, row: 0, type: 'virus', color: 'yellow', frame: 0 }],
+				})
+			); // round_start with a virus already sitting in column 0
+			events.length = 0;
+
+			tracker.processFrame(
+				frame({
+					virus: 2,
+					cells: [
+						{ col: 0, row: 0, type: 'pill', shape: 'single', color: 'red' },
+					],
+				})
+			); // garbage overwrites the virus that was there
+
+			expect(events).toEqual([]);
+		});
+
+		it('reports a fresh entry once a column empties out and new garbage lands there again', () => {
+			tracker.processFrame(frame({ virus: 0 }));
+			events.length = 0;
+
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 0, row: 0, type: 'pill', shape: 'single', color: 'red' },
+					],
+				})
+			);
+			tracker.processFrame(frame({ virus: 0 })); // that half fell away, column 0 empty again
+			events.length = 0;
+
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 0, row: 0, type: 'pill', shape: 'single', color: 'blue' },
+					],
+				})
+			);
+
+			expect(events).toEqual([
+				{
+					type: 'garbage_entered',
+					detail: {
+						roundId: 1,
+						cells: [{ col: 0, shape: 'single', color: 'blue' }],
+					},
+				},
+			]);
+		});
+
+		it('does not mistake a garbage half landing on a spawn column for part of a real piece spawn', () => {
+			tracker.processFrame(frame({ virus: 0 }));
+			events.length = 0;
+
+			// a loose half at col 3 (one of the two spawn columns), alone -- not a paired spawn
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 3, row: 0, type: 'pill', shape: 'single', color: 'red' },
+					],
+				})
+			);
+
+			expect(events).toEqual([
+				{
+					type: 'garbage_entered',
+					detail: {
+						roundId: 1,
+						cells: [{ col: 3, shape: 'single', color: 'red' }],
+					},
+				},
+			]);
+		});
+
+		it('does not mistake independent garbage halves landing on both spawn columns for a real piece spawn', () => {
+			tracker.processFrame(frame({ virus: 0 }));
+			events.length = 0;
+
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 3, row: 0, type: 'pill', shape: 'single', color: 'red' },
+						{ col: 4, row: 0, type: 'pill', shape: 'single', color: 'blue' },
+					],
+				})
+			);
+
+			expect(events.filter(e => e.type === 'piece_entered')).toEqual([]);
+			expect(events.filter(e => e.type === 'garbage_entered')).toHaveLength(1);
 		});
 	});
 });

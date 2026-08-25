@@ -25,12 +25,15 @@
 //   piece_entered fires when a player-controlled piece spawns, detected by position rather than
 //   raw color. Per confirmed report: a player piece always spawns horizontally at the same fixed
 //   pair of middle columns (SPAWN_COL_LEFT/RIGHT below), never anywhere else -- and separately,
-//   versus mode can add "garbage" to a bottle as loose single half-pills that can land in *any*
-//   column (never the paired-horizontal shape a real spawn is). So watching specifically that
-//   fixed pair, rather than the whole top row, both catches every genuine spawn and won't
-//   misidentify a garbage half landing elsewhere as one -- important since garbage isn't
-//   detected/reported at all yet (no captures of it exist to verify a design against), and this
-//   keeps piece_entered from being polluted by it once it is.
+//   versus mode can add "garbage" to a bottle as loose single half-pills (PILL_SHAPE_TEMPLATES'
+//   'single' shape -- see templates.js) that can land in *any* column, 2/3/4 at once with at
+//   least one empty column between each (confirmed report), never the paired-horizontal shape a
+//   real spawn is. So watching specifically that fixed pair by shape, not just position, both
+//   catches every genuine spawn and won't misidentify a garbage half landing on the spawn columns
+//   as one -- see #detectGarbageEntries for the separate garbage_entered event this same
+//   distinction makes possible. If a garbage half lands on an already-occupied column it
+//   overwrites what was there (confirmed report); #detectGarbageEntries deliberately doesn't
+//   track that case, only a column that was genuinely empty beforehand.
 //
 //   An earlier version fired on every empty->occupied transition of the spawn pair, aggregated
 //   as one flag. That double-counted real, ordinary player input: sliding a piece off the spawn
@@ -100,6 +103,28 @@ function isPillHalf(cell) {
 	return !!cell && cell.type === 'pill';
 }
 
+// A real spawn's two cells are always the paired 'left'/'right' shapes (see templates.js) --
+// never 'single', which is exclusively how a loose garbage half or an orphaned match-clear
+// remnant renders. Distinguishing by shape (not just isPillHalf's type) keeps a garbage half
+// that happens to land on a spawn column from ever looking like part of a real spawn.
+function isHorizontalPillHalf(cell) {
+	return (
+		!!cell &&
+		cell.type === 'pill' &&
+		(cell.shape === 'left' || cell.shape === 'right')
+	);
+}
+
+// See templates.js's PILL_SHAPE_TEMPLATES comment: 'single' also occurs in ordinary (non-versus)
+// play once a match clears one half of a landed pill, leaving the other standing -- but that
+// case can only ever transition from an already-occupied cell (the pair was there first), never
+// from an empty one, which is exactly the transition #detectGarbageEntries requires. A cell can
+// only go directly from empty to 'single' by something dropping in from outside as a loose half
+// -- garbage's whole signature (confirmed report).
+function isGarbageHalf(cell) {
+	return !!cell && cell.type === 'pill' && cell.shape === 'single';
+}
+
 // A comparable key for a next-pill reading, or null if either half wasn't confidently read as a
 // pill (in which case we can't use this signal and must fall back on the other one).
 function nextPillKey(nextPill) {
@@ -132,6 +157,7 @@ export default class RoundTracker extends EventTarget {
 	#armed = true; // ready to treat the next spawn-pair occupation as a genuine new piece
 	#lastNextPillKey = null;
 	#descentBaseline = null;
+	#topRowEmpty = new Array(COLS).fill(true); // last frame's row-0 occupancy, per column
 
 	// frame: { board, level, virus, result, hasBottle, isTitleScreen, ... } -- i.e. one bottle's
 	// worth of a DrMarioOCR result (single-player's top-level shape, or versus's player1/player2
@@ -193,6 +219,7 @@ export default class RoundTracker extends EventTarget {
 			this.#armed = true;
 			this.#lastNextPillKey = null;
 			this.#descentBaseline = null;
+			this.#topRowEmpty = new Array(COLS).fill(true);
 
 			this.dispatchEvent(
 				new CustomEvent('round_start', {
@@ -250,6 +277,7 @@ export default class RoundTracker extends EventTarget {
 		}
 
 		this.#detectPieceEntries(frame.board, frame.nextPill);
+		this.#detectGarbageEntries(frame.board);
 	}
 
 	// Versus mode's round boundary is shared between both bottles -- one player winning
@@ -282,7 +310,7 @@ export default class RoundTracker extends EventTarget {
 	#detectPieceEntries(board, nextPill) {
 		const left = board[0][SPAWN_COL_LEFT];
 		const right = board[0][SPAWN_COL_RIGHT];
-		const occupied = isPillHalf(left) && isPillHalf(right);
+		const occupied = isHorizontalPillHalf(left) && isHorizontalPillHalf(right);
 
 		if (!this.#armed) {
 			const currentKey = nextPillKey(nextPill);
@@ -316,5 +344,38 @@ export default class RoundTracker extends EventTarget {
 		}
 
 		this.#spawnPairOccupied = occupied;
+	}
+
+	// Garbage enters as one or more loose 'single' halves along the top row -- unlike a real
+	// spawn, in any column(s), 2/3/4 at once, always with at least a column of gap between
+	// simultaneous ones (confirmed report; not something this needs to verify itself, since each
+	// column's own empty->single transition is independently sufficient evidence). No #armed-style
+	// re-arming is needed the way piece detection has: a real spawn can look like it "re-enters"
+	// the same spot via lateral movement or rotation, but a cell can only ever go directly from
+	// empty to 'single' by something dropping in from outside (see isGarbageHalf) -- there's no
+	// equivalent false re-trigger to guard against here.
+	#detectGarbageEntries(board) {
+		const newCells = [];
+		const topRowEmpty = [];
+
+		for (let col = 0; col < COLS; col++) {
+			const cell = board[0][col];
+
+			if (this.#topRowEmpty[col] && isGarbageHalf(cell)) {
+				newCells.push({ col, shape: cell.shape, color: cell.color });
+			}
+
+			topRowEmpty.push(!cell || cell.type === 'empty');
+		}
+
+		if (newCells.length > 0) {
+			this.dispatchEvent(
+				new CustomEvent('garbage_entered', {
+					detail: { roundId: this.#roundId, cells: newCells },
+				})
+			);
+		}
+
+		this.#topRowEmpty = topRowEmpty;
 	}
 }

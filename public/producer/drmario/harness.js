@@ -60,8 +60,8 @@ const MAX_LOG_LINES = 100;
 let trackers = {};
 
 function formatDetailValue(key, value) {
-	// piece_entered's `cells` is an array of { col, shape, color } -- the generic k=v
-	// stringification below would just print "[object Object]" for it.
+	// piece_entered's and garbage_entered's `cells` are both arrays of { col, shape, color } --
+	// the generic k=v stringification below would just print "[object Object]" for them.
 	if (key === 'cells' && Array.isArray(value)) {
 		return value.map(c => `col${c.col}:${c.shape}:${c.color}`).join(',');
 	}
@@ -87,6 +87,7 @@ function wireTracker(tracker, label) {
 		'round_ready',
 		'round_end',
 		'piece_entered',
+		'garbage_entered',
 	].forEach(type => {
 		tracker.addEventListener(type, event => logTrackerEvent(label, event));
 	});
