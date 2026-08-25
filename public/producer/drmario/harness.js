@@ -199,12 +199,14 @@ function buildResultsSkeleton() {
 			<div class="players">
 				<div>
 					<h3>Player 1</h3>
+					<p class="round-state" id="round-1p"></p>
 					<div id="board-1p"></div>
 					<p>Next: <span id="next-1p"></span></p>
 					<p class="stats" id="stats-1p"></p>
 				</div>
 				<div>
 					<h3>Player 2</h3>
+					<p class="round-state" id="round-2p"></p>
 					<div id="board-2p"></div>
 					<p>Next: <span id="next-2p"></span></p>
 					<p class="stats" id="stats-2p"></p>
@@ -214,6 +216,7 @@ function buildResultsSkeleton() {
 		`;
 	} else {
 		results.innerHTML = `
+			<p class="round-state" id="round-sp"></p>
 			<div id="board-sp"></div>
 			<p>Next: <span id="next-sp"></span></p>
 			<p class="stats" id="stats-sp"></p>
@@ -222,8 +225,22 @@ function buildResultsSkeleton() {
 }
 buildResultsSkeleton();
 
+// 'playing' is the ordinary state and not worth calling out; the others are.
+function renderRoundState(element, state) {
+	element.textContent =
+		state === 'playing' ? '' : state.replace('_', ' ').toUpperCase();
+}
+
 function renderResult(result) {
 	if (result.layout === LAYOUT.VERSUS) {
+		renderRoundState(
+			document.getElementById('round-1p'),
+			result.player1.result
+		);
+		renderRoundState(
+			document.getElementById('round-2p'),
+			result.player2.result
+		);
 		renderBoard(document.getElementById('board-1p'), result.player1.board);
 		renderBoard(document.getElementById('board-2p'), result.player2.board);
 		renderNextPill(document.getElementById('next-1p'), result.player1.nextPill);
@@ -236,6 +253,7 @@ function renderResult(result) {
 		document.getElementById('crowns').textContent =
 			`Crowns -- P1: ${result.crowns.player1.wins} / P2: ${result.crowns.player2.wins}`;
 	} else {
+		renderRoundState(document.getElementById('round-sp'), result.result);
 		renderBoard(document.getElementById('board-sp'), result.board);
 		renderNextPill(document.getElementById('next-sp'), result.nextPill);
 

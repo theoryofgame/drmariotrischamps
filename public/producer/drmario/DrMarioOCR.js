@@ -15,6 +15,7 @@ import {
 	REFERENCE_SIZE,
 	LAYOUT,
 	CONFIGS,
+	FIELD,
 	REFERENCE_LOCATIONS,
 	REFERENCE_LOCATIONS_VERSUS,
 	VERSUS,
@@ -22,6 +23,7 @@ import {
 import { scanBoard, identifyNextPill } from './BoardOCR.js';
 import { readNumber, readSpeed } from './PanelOCR.js';
 import { readCrowns } from './CrownOCR.js';
+import { readResult } from './ResultOCR.js';
 
 export class DrMarioOCR extends EventTarget {
 	constructor(config) {
@@ -107,6 +109,7 @@ export class DrMarioOCR extends EventTarget {
 	#scanSinglePlayer(image) {
 		return {
 			layout: LAYOUT.SINGLE_PLAYER,
+			result: readResult(image, FIELD),
 			board: scanBoard(image),
 			nextPill: identifyNextPill(image),
 			top: readNumber(image, REFERENCE_LOCATIONS.top),
@@ -123,6 +126,7 @@ export class DrMarioOCR extends EventTarget {
 		return {
 			layout: LAYOUT.VERSUS,
 			player1: {
+				result: readResult(image, VERSUS.BOTTLE_1P),
 				board: scanBoard(image, { field: VERSUS.BOTTLE_1P }),
 				nextPill: identifyNextPill(image, { position: VERSUS.NEXT_PILL_1P }),
 				level: readNumber(image, loc.level_1p),
@@ -130,6 +134,7 @@ export class DrMarioOCR extends EventTarget {
 				virus: readNumber(image, loc.virus_1p),
 			},
 			player2: {
+				result: readResult(image, VERSUS.BOTTLE_2P),
 				board: scanBoard(image, { field: VERSUS.BOTTLE_2P }),
 				nextPill: identifyNextPill(image, { position: VERSUS.NEXT_PILL_2P }),
 				level: readNumber(image, loc.level_2p),
