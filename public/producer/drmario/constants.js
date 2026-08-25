@@ -53,16 +53,12 @@ export const LAYOUT = {
 };
 
 // Crop rectangles for the single-player screen's non-bottle regions, in the same native
-// 256x224 reference frame as FIELD above. All measured directly off a real capture (see
-// tests/fixtures/dr_mario/level00_frameA.png) the same way FIELD/templates.js were.
+// 256x224 reference frame as FIELD above. All measured directly off real captures (see
+// tests/fixtures/dr_mario) the same way FIELD/templates.js were.
 //
-// Of these, `field` and `next_pill` have working scanners today (BoardOCR.js). The rest are
-// scaffolding: their crop rectangles are real and verified, but nothing reads them yet --
-//   - `top`/`score`/`level`/`virus` are digit sequences. Building a digit template bank (the
-//     Dr. Mario equivalent of the Tetris OCR's digit templates, see ../TetrisOCR.js) needs
-//     reference captures covering all 10 digits; the captures on hand only show 0/1/2/4/5.
-//   - `speed` is not digits at all -- it's one of a small set of words (LOW/MED/HI), so it needs
-//     matching against whole-word templates rather than per-digit ones.
+// All of these now have working scanners: `field`/`next_pill` via BoardOCR.js, and
+// `top`/`score`/`level`/`virus` (digit sequences, via PanelOCR.readNumber()) and `speed` (one of
+// LOW/MED/HI, matched as a whole word rather than per-digit, via PanelOCR.readSpeed()).
 export const REFERENCE_LOCATIONS = {
 	field: { crop: FIELD },
 	next_pill: { crop: { x: NEXT_PILL.x, y: NEXT_PILL.y, w: 15, h: 7 } },

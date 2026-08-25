@@ -18,142 +18,11 @@ import {
 	COLOR_PALETTE,
 } from './constants.js';
 import { CELL_TEMPLATES } from './templates.js';
-
-const LIT_LUMA_THRESHOLD = 24; // background is pure black; any real sprite pixel reads well above this
-
-function luma(r, g, b) {
-	return r * 0.299 + g * 0.587 + b * 0.114;
-}
-
-function getPixel(image, x, y) {
-	const idx = (y * image.width + x) << 2;
-	return [image.data[idx], image.data[idx + 1], image.data[idx + 2]];
-}
-
-// Samples one cell into a CELL_SIZE x height grid of { lit, rgb } pixels. height defaults to
-// CELL_SIZE (a full bottle cell); identifyNextPill() overrides it to stop 1 row short of a full
-// cell, because unlike a bottle cell -- always padded with blank rows below its content -- the
-// row right after the next-pill preview isn't padding, it's the top of Dr. Mario's hat.
-function sampleCell(image, cellX, cellY, height = CELL_SIZE) {
-	const grid = [];
-
-	for (let y = 0; y < height; y++) {
-		const row = [];
-
-		for (let x = 0; x < CELL_SIZE; x++) {
-			const rgb = getPixel(image, cellX + x, cellY + y);
-			row.push({ lit: luma(...rgb) > LIT_LUMA_THRESHOLD, rgb });
-		}
-
-		grid.push(row);
-	}
-
-	return grid;
-}
-
-// Finds the bounding box of "lit" pixels in a sampled cell grid, and returns just that
-// sub-grid. Real NES tile art in this game is never drawn flush against all 4 edges of its
-// 8x8 cell, and (per templates.js) the same shape can render with its content shifted by a
-// row depending on the instance, so content is always compared to templates by shape/bounding
-// box rather than by raw fixed cell offset.
-function trimToContent(grid) {
-	let top = -1,
-		bottom = -1,
-		left = -1,
-		right = -1;
-
-	for (let y = 0; y < grid.length; y++) {
-		for (let x = 0; x < grid[y].length; x++) {
-			if (!grid[y][x].lit) continue;
-
-			if (top === -1) top = y;
-			bottom = y;
-			if (left === -1 || x < left) left = x;
-			if (right === -1 || x > right) right = x;
-		}
-	}
-
-	if (top === -1) return null; // nothing lit: empty cell
-
-	return grid.slice(top, bottom + 1).map(row => row.slice(left, right + 1));
-}
-
-function charRowToLitRow(charRow) {
-	return charRow.split('').map(ch => ch !== '.');
-}
-
-// Counts mismatches between two boolean grids, trying every offset at which the smaller grid
-// fits within the larger one along both axes, and keeping the best (lowest-mismatch) offset.
-// This is what absorbs the per-instance +/-1 row (and, defensively, column) jitter noted above.
-function bestAlignedMismatchCount(gridA, gridB) {
-	const [small, large] =
-		gridA.length * gridA[0].length <= gridB.length * gridB[0].length
-			? [gridA, gridB]
-			: [gridB, gridA];
-
-	const rowSlack = large.length - small.length;
-	const colSlack = large[0].length - small[0].length;
-
-	if (rowSlack < 0 || colSlack < 0) {
-		// small doesn't actually fit inside large on some axis: fall back to comparing
-		// only the overlapping region, which will naturally score as a poor match.
-		let mismatches = 0;
-		const h = Math.max(gridA.length, gridB.length);
-		const w = Math.max(gridA[0].length, gridB[0].length);
-
-		for (let y = 0; y < h; y++) {
-			for (let x = 0; x < w; x++) {
-				const a = gridA[y]?.[x] ?? false;
-				const b = gridB[y]?.[x] ?? false;
-				if (a !== b) mismatches++;
-			}
-		}
-
-		return mismatches;
-	}
-
-	let best = Infinity;
-
-	for (let rowOffset = 0; rowOffset <= rowSlack; rowOffset++) {
-		for (let colOffset = 0; colOffset <= colSlack; colOffset++) {
-			let mismatches = 0;
-
-			for (let y = 0; y < large.length; y++) {
-				for (let x = 0; x < large[0].length; x++) {
-					const inSmall =
-						y >= rowOffset &&
-						y < rowOffset + small.length &&
-						x >= colOffset &&
-						x < colOffset + small[0].length;
-					const smallVal = inSmall
-						? small[y - rowOffset][x - colOffset]
-						: false;
-
-					if (smallVal !== large[y][x]) mismatches++;
-				}
-			}
-
-			if (mismatches < best) best = mismatches;
-		}
-	}
-
-	return best;
-}
-
-function matchTemplate(litGrid) {
-	let best = null;
-
-	for (const template of CELL_TEMPLATES) {
-		const templateGrid = template.rows.map(charRowToLitRow);
-		const distance = bestAlignedMismatchCount(litGrid, templateGrid);
-
-		if (!best || distance < best.distance) {
-			best = { template, distance };
-		}
-	}
-
-	return best;
-}
+import {
+	sampleRegion,
+	trimToContent,
+	matchBestTemplate,
+} from './shapeMatch.js';
 
 function nearestPaletteColor(rgb) {
 	let best = null;
@@ -196,11 +65,13 @@ const DEFAULT_MAX_DISTANCE = 6;
 // identifyNextPill() (a fixed screen position that isn't part of that grid at all -- the pill
 // held above Dr. Mario's head previewing what comes after the piece currently in play). Both
 // read a tile at some absolute pixel position and match it the same way; only the sampled
-// height (see sampleCell()) and the caller-supplied `extra` fields (col/row vs. slot) differ.
+// height (see identifyNextPill()) and the caller-supplied `extra` fields (col/row vs. slot)
+// differ.
 function identifyTile(image, tileX, tileY, options, extra) {
 	const maxDistance = options.maxDistance ?? DEFAULT_MAX_DISTANCE;
+	const height = options.height ?? CELL_SIZE;
 
-	const grid = sampleCell(image, tileX, tileY, options.height);
+	const grid = sampleRegion(image, tileX, tileY, CELL_SIZE, height);
 	const trimmed = trimToContent(grid);
 
 	if (!trimmed) {
@@ -208,7 +79,7 @@ function identifyTile(image, tileX, tileY, options, extra) {
 	}
 
 	const litGrid = trimmed.map(r => r.map(p => p.lit));
-	const { template, distance } = matchTemplate(litGrid);
+	const { template, distance } = matchBestTemplate(litGrid, CELL_TEMPLATES);
 
 	if (distance > maxDistance) {
 		return { type: 'unknown', ...extra, distance, bestGuess: template.id };
@@ -249,7 +120,7 @@ export function identifyCell(image, col, row, options = {}) {
 export function identifyNextPill(image, options = {}) {
 	// height: 7, not the full CELL_SIZE (8) -- the row right below this preview is the top of
 	// Dr. Mario's hat, not blank padding, so sampling a full cell here would occasionally pull
-	// in a stray lit pixel from it (see sampleCell()).
+	// in a stray lit pixel from it.
 	const tileOptions = { ...options, height: 7 };
 
 	return {
