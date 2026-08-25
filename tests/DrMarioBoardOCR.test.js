@@ -21,13 +21,14 @@ function loadFixture(filename) {
 }
 
 describe('DrMarioBoardOCR', () => {
-	let frameA, frameB, pillShapes, level05HiSpeed;
+	let frameA, frameB, pillShapes, level05HiSpeed, pieceClear;
 
 	beforeAll(() => {
 		frameA = loadFixture('level00_frameA.png');
 		frameB = loadFixture('level00_frameB.png');
 		pillShapes = loadFixture('level00_pill_shapes.png');
 		level05HiSpeed = loadFixture('level05_hi_speed.png');
+		pieceClear = loadFixture('piece_clear.png');
 	});
 
 	describe('empty cells', () => {
@@ -267,6 +268,36 @@ describe('DrMarioBoardOCR', () => {
 				type: 'virus',
 				color: 'blue',
 				frame: 1,
+			});
+		});
+	});
+
+	describe('match-clear animation (piece_clear)', () => {
+		// 4 blue pieces (a mix of virus and pill segments, per direct observation of the capture
+		// this came from) stacked in column 0, mid-clear. Both render the exact same hollow-ring
+		// shape while clearing, so type/shape can't distinguish virus from pill here -- only
+		// color survives.
+		it('identifies all 4 clearing cells by color, with no shape/type distinction', () => {
+			[6, 7, 8, 9].forEach(row => {
+				expect(identifyCell(pieceClear, 0, row)).toMatchObject({
+					type: 'clearing',
+					color: 'blue',
+				});
+			});
+		});
+
+		it('still reads ordinary viruses elsewhere on the same board correctly', () => {
+			expect(identifyCell(pieceClear, 3, 6)).toMatchObject({
+				type: 'virus',
+				color: 'yellow',
+			});
+			expect(identifyCell(pieceClear, 2, 7)).toMatchObject({
+				type: 'virus',
+				color: 'red',
+			});
+			expect(identifyCell(pieceClear, 7, 7)).toMatchObject({
+				type: 'virus',
+				color: 'blue',
 			});
 		});
 	});

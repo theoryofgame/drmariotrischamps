@@ -176,7 +176,29 @@ export const PILL_SHAPE_TEMPLATES = [
 	},
 ];
 
+// A cell mid-match-clear (4+ connected same-color virus/pill segments, about to be removed)
+// renders as a hollow ring in the clearing color, replacing whatever virus/pill shape was
+// there -- confirmed identical for both viruses and pills clearing (see
+// tests/fixtures/dr_mario/piece_clear.png, 4 stacked cells all clearing this same shape). That
+// means a clearing cell can't be told apart from a virus vs. a pill by shape alone the way a
+// steady-state cell can; only its color is still readable, sampled the same way pill color is.
+// Only one shape/frame has been observed so far -- if the game also blinks this against a
+// second visual state, that isn't captured yet.
+export const CLEARING_TEMPLATE = {
+	id: 'clearing',
+	rows: [
+		'.XXXXX.',
+		'X.....X',
+		'X.....X',
+		'X.....X',
+		'X.....X',
+		'X.....X',
+		'.XXXXX.',
+	],
+};
+
 export const CELL_TEMPLATES = [
 	...VIRUS_TEMPLATES.map(t => ({ ...t, kind: 'virus' })),
 	...PILL_SHAPE_TEMPLATES.map(t => ({ ...t, kind: 'pill' })),
+	{ ...CLEARING_TEMPLATE, kind: 'clearing' },
 ];

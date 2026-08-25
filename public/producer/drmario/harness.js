@@ -149,13 +149,23 @@ function colorFor(cell) {
 	return rgb ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : '#f0f';
 }
 
-// Viruses and pills of the same color are otherwise indistinguishable at a glance in this
-// small a swatch, so viruses additionally get a dark center dot -- pills stay a plain square.
+// Viruses, pills, and clearing cells of the same color are otherwise indistinguishable at a
+// glance in this small a swatch: viruses get a dark center dot, clearing cells get a hollow
+// ring (echoing the actual hollow-ring sprite -- see templates.js CLEARING_TEMPLATE), pills
+// stay a plain square.
 function backgroundFor(cell) {
 	const color = colorFor(cell);
-	if (!cell || cell.type !== 'virus') return color;
+	if (!cell) return color;
 
-	return `radial-gradient(circle at center, #000 22%, ${color} 23%)`;
+	if (cell.type === 'virus') {
+		return `radial-gradient(circle at center, #000 22%, ${color} 23%)`;
+	}
+
+	if (cell.type === 'clearing') {
+		return `radial-gradient(circle at center, #000 40%, ${color} 41%, ${color} 75%, #000 76%)`;
+	}
+
+	return color;
 }
 
 function renderBoard(container, board) {

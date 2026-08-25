@@ -95,6 +95,18 @@ function identifyTile(image, tileX, tileY, options, extra) {
 		};
 	}
 
+	if (template.kind === 'clearing') {
+		// Whatever was here (virus or pill) is no longer visually distinguishable once it starts
+		// clearing -- both render this same hollow-ring shape (see templates.js) -- only color
+		// survives.
+		return {
+			type: 'clearing',
+			color: sampleDominantColor(trimmed),
+			...extra,
+			distance,
+		};
+	}
+
 	return {
 		type: 'pill',
 		shape: template.shape,
