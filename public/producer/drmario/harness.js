@@ -4,6 +4,7 @@
 
 import { LAYOUT, REFERENCE_SIZE, COLOR_PALETTE } from './constants.js';
 import { DrMarioOCR } from './DrMarioOCR.js';
+import RoundTracker from './RoundTracker.js';
 import {
 	playVideoFromDevice,
 	playVideoFromScreenCap,
@@ -52,6 +53,44 @@ referenceCanvas.style.width = `${REFERENCE_SIZE.w * 2}px`;
 referenceCanvas.style.height = `${REFERENCE_SIZE.h * 2}px`;
 referenceHolder.appendChild(referenceCanvas);
 
+// RoundTracker instances: one bottle each. Rebuilt (not just reset) on layout change since a
+// player-1-vs-player-2 pair only makes sense once you're actually in versus mode.
+const eventLog = document.getElementById('event-log');
+const MAX_LOG_LINES = 100;
+let trackers = {};
+
+function logTrackerEvent(label, event) {
+	const line = document.createElement('div');
+	const detail = Object.entries(event.detail)
+		.map(([k, v]) => `${k}=${v}`)
+		.join(' ');
+	line.textContent = `[${label}] ${event.type} ${detail}`;
+	eventLog.prepend(line);
+	while (eventLog.childElementCount > MAX_LOG_LINES) {
+		eventLog.removeChild(eventLog.lastChild);
+	}
+}
+
+function wireTracker(tracker, label) {
+	['round_start', 'round_ready', 'round_end', 'piece_entered'].forEach(type => {
+		tracker.addEventListener(type, event => logTrackerEvent(label, event));
+	});
+}
+
+function buildTrackers() {
+	eventLog.innerHTML = '';
+
+	if (layoutSelect.value === LAYOUT.VERSUS) {
+		trackers = { player1: new RoundTracker(), player2: new RoundTracker() };
+		wireTracker(trackers.player1, '1P');
+		wireTracker(trackers.player2, '2P');
+	} else {
+		trackers = { single: new RoundTracker() };
+		wireTracker(trackers.single, 'SP');
+	}
+}
+buildTrackers();
+
 function updateCalInputs() {
 	calInputs.x.value = calibration ? Math.round(calibration.x) : '';
 	calInputs.y.value = calibration ? Math.round(calibration.y) : '';
@@ -88,6 +127,7 @@ document.getElementById('cal-reset').addEventListener('click', () => {
 layoutSelect.addEventListener('change', () => {
 	ocr.setConfig({ layout: layoutSelect.value, calibration });
 	buildResultsSkeleton();
+	buildTrackers();
 });
 
 let pendingCorner = null;
@@ -252,6 +292,9 @@ function renderResult(result) {
 			`Level ${result.player2.level ?? '?'} / Speed ${result.player2.speed ?? '?'} / Virus ${result.player2.virus ?? '?'}`;
 		document.getElementById('crowns').textContent =
 			`Crowns -- P1: ${result.crowns.player1.wins} / P2: ${result.crowns.player2.wins}`;
+
+		trackers.player1.processFrame(result.player1);
+		trackers.player2.processFrame(result.player2);
 	} else {
 		renderRoundState(document.getElementById('round-sp'), result.result);
 		renderBoard(document.getElementById('board-sp'), result.board);
@@ -259,6 +302,8 @@ function renderResult(result) {
 
 		document.getElementById('stats-sp').textContent =
 			`Top ${result.top ?? '?'} / Score ${result.score ?? '?'} / Level ${result.level ?? '?'} / Speed ${result.speed ?? '?'} / Virus ${result.virus ?? '?'}`;
+
+		trackers.single.processFrame(result);
 	}
 }
 
