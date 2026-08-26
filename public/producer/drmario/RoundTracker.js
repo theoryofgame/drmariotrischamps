@@ -301,14 +301,20 @@ export default class RoundTracker extends EventTarget {
 
 	// Counterpart to endRound(): once the linked tracker's own round_start naturally fires (its
 	// own result really did leave and return to 'playing'), the consumer relays it here (see
-	// harness.js's versus wiring) so this tracker's round numbering and level/target line up with
-	// it exactly, instead of this bottle self-detecting a moment early off its own frame data. A
-	// no-op unless this tracker is actually waiting for one -- i.e. its last round ended via
-	// endRound(), not its own result -- so two bottles that happen to end and restart naturally at
-	// the same time (e.g. a shared GAME OVER screen) don't clobber each other's own detection.
-	syncRoundStart({ roundId, level }) {
+	// harness.js's versus wiring) so this tracker's round *numbering* lines up with it exactly,
+	// instead of this bottle self-detecting a moment early off its own frame data. Deliberately
+	// only takes roundId, not level: each player's level is set independently (reported live --
+	// e.g. 1P on level 7 while 2P is on level 0), so this bottle's own level/virusTarget still has
+	// to come from its own frames, the same way it always would -- starting this round with
+	// level: null and letting the existing self-heal loop (see processFrame's POPULATING branch)
+	// pick it up and fire its own round_level_confirmed, exactly as if it had been unreadable on
+	// an ordinary self-detected round_start. A no-op unless this tracker is actually waiting for
+	// one -- i.e. its last round ended via endRound(), not its own result -- so two bottles that
+	// happen to end and restart naturally at the same time (e.g. a shared GAME OVER screen) don't
+	// clobber each other's own detection.
+	syncRoundStart({ roundId }) {
 		if (this.#phase !== PHASE.ENDED || !this.#endedExternally) return;
-		this.#startRound(roundId, level);
+		this.#startRound(roundId, null);
 	}
 
 	#startRound(roundId, level) {

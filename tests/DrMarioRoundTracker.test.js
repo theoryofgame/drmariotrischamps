@@ -175,28 +175,40 @@ describe('RoundTracker', () => {
 			expect(events).toEqual([]);
 		});
 
-		it('syncRoundStart() starts the next round with the given roundId/level once the linked tracker relays its own real round_start', () => {
+		it('syncRoundStart() starts the next round with the given roundId, but never borrows level from the linked tracker -- each player sets their own level independently', () => {
 			tracker.processFrame(frame({ level: 0, virus: 4 }));
 			tracker.endRound('opponent_topout');
 			events.length = 0;
 
-			tracker.syncRoundStart({ roundId: 2, level: 3, virusTarget: 16 });
+			// reproduces a live bug report: the linked tracker relayed its own level (0) here,
+			// which incorrectly forced this bottle onto the same target even though it was really
+			// on level 7 (target 32) -- causing round_ready to fire far too early
+			tracker.syncRoundStart({ roundId: 2 });
 
 			expect(events).toEqual([
 				{
 					type: 'round_start',
-					detail: { roundId: 2, level: 3, virusTarget: 16 },
+					detail: { roundId: 2, level: null, virusTarget: null },
 				},
 			]);
 
-			// and behaves like a normal round from here on, e.g. still reaching round_ready off
-			// this bottle's own subsequent frames
+			// this bottle's own (independent) level self-heals from its own frames exactly like
+			// an ordinary unreadable-at-round_start case
 			events.length = 0;
-			tracker.processFrame(frame({ level: 3, virus: 16 }));
+			tracker.processFrame(frame({ level: 7, virus: 2 }));
+			expect(events).toEqual([
+				{
+					type: 'round_level_confirmed',
+					detail: { roundId: 2, level: 7, virusTarget: 32 },
+				},
+			]);
+
+			events.length = 0;
+			tracker.processFrame(frame({ level: 7, virus: 32 }));
 			expect(events).toEqual([
 				{
 					type: 'round_ready',
-					detail: { roundId: 2, virusCount: 16 },
+					detail: { roundId: 2, virusCount: 32 },
 				},
 			]);
 		});
@@ -205,7 +217,7 @@ describe('RoundTracker', () => {
 			tracker.processFrame(frame({ level: 0, virus: 4 })); // round_start, self-detected
 			events.length = 0;
 
-			tracker.syncRoundStart({ roundId: 99, level: 10, virusTarget: 44 });
+			tracker.syncRoundStart({ roundId: 99 });
 
 			expect(events).toEqual([]);
 		});
