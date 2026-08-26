@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import PrivateRoom from './PrivateRoom.js';
 import MatchRoom from './MatchRoom.js';
 import Producer from './Producer.js';
+import DrMarioProducer from './DrMarioProducer.js';
 
 // Twitch stuff
 import { RefreshingAuthProvider } from '@twurple/auth';
@@ -42,6 +43,11 @@ class User extends EventEmitter {
 		this.private_room = new PrivateRoom(this);
 		this.host_room = new MatchRoom(this);
 
+		// Dr Mario versus is single-system (one capture feed already has both bottles), so it
+		// only ever needs a private room, never a match room -- see DrMarioProducer.js.
+		this.drmario_producer = new DrMarioProducer(this);
+		this.drmario_private_room = new PrivateRoom(this);
+
 		// match room links this user to the host room of another user
 		this.match_room = null;
 		this.match_room_join_ts = -1;
@@ -56,9 +62,12 @@ class User extends EventEmitter {
 		this._handleProducerClose = this._handleProducerClose.bind(this);
 		this._handleMatchRoomClose = this._handleMatchRoomClose.bind(this);
 		this._onTwitchTokenRefreshed = this._onTwitchTokenRefreshed.bind(this);
+		this._handleDrMarioProducerMessage =
+			this._handleDrMarioProducerMessage.bind(this);
 
 		this.producer.on('message', this._handleProducerMessage);
 		this.producer.on('close', this._handleProducerClose);
+		this.drmario_producer.on('message', this._handleDrMarioProducerMessage);
 
 		this.checkScheduleDestroy();
 	}
@@ -111,6 +120,21 @@ class User extends EventEmitter {
 			this.leaveMatchRoom();
 			this.makePlayer();
 		}
+	}
+
+	// Simpler than setProducerConnection: Dr Mario versus has no match-room path (see
+	// DrMarioProducer.js), so there's no match/competition/target_user to thread through.
+	setDrMarioProducerConnection(conn) {
+		this.addConnection(conn);
+		this.drmario_producer.setConnection(conn);
+	}
+
+	getDrMarioProducer() {
+		return this.drmario_producer;
+	}
+
+	getDrMarioPrivateRoom() {
+		return this.drmario_private_room;
 	}
 
 	getProducer() {
@@ -258,6 +282,10 @@ class User extends EventEmitter {
 		if (this.match_room) {
 			this.match_room.handleProducerMessage(this, msg);
 		}
+	}
+
+	_handleDrMarioProducerMessage(msg) {
+		this.drmario_private_room.handleProducerMessage(this, msg);
 	}
 
 	_handleProducerClose() {

@@ -43,6 +43,121 @@ export default function init(server, wss) {
 			return;
 		}
 
+		// Dr Mario has its own, separate URL namespace so none of the Tetris regex blocks below
+		// need to change -- versus is single-system (one capture feed already has both bottles),
+		// so there's no match-room equivalent to route to, just a private room. Checked before
+		// the generic Tetris view/producer blocks below, since those regexes are loose enough to
+		// otherwise swallow a /ws/view/drmario/... or /ws/room/drmario/... path themselves.
+		m = request.nc_url.pathname.match(
+			/^\/ws\/view\/drmario\/([a-z0-9_-]+)\/([a-zA-Z0-9-]+)/
+		);
+
+		request.is_drmario_secret_view = !!m;
+
+		if (request.is_drmario_secret_view) {
+			if (!request.drmario) {
+				request.drmario = {};
+			}
+
+			const layout = layouts[m[1]];
+
+			if (!layout) {
+				socket.write('HTTP/1.1 404 Layout not found\r\n\r\n');
+				socket.destroy();
+				return;
+			}
+
+			request.drmario.view = {
+				layout_id: m[1],
+				user_secret: m[2],
+			};
+
+			request.nc_url.searchParams.set(
+				'_layout',
+				request.drmario.view.layout_id
+			);
+
+			// connection from the non-session-ed views (from OBS)
+			const user = await UserDAO.getUserBySecret(
+				request.drmario.view.user_secret
+			);
+
+			if (!user) {
+				socket.write('HTTP/1.1 404 User Not Found\r\n\r\n');
+				socket.destroy();
+				return;
+			}
+
+			console.log(
+				`WS: Retrieved user ${user.login} from drmario view secret`,
+				request.drmario.view
+			);
+
+			if (!request.session) {
+				request.session = { save: passThrough }; // should never enter here
+			}
+
+			request.session.user = {
+				id: user.id,
+				login: user.login,
+				secret: user.secret,
+				profile_image_url: user.profile_image_url,
+			};
+
+			request.session.save(() => {
+				wss.handleUpgrade(request, socket, head, function (ws) {
+					wss.emit('connection', ws, request);
+				});
+			});
+
+			return;
+		}
+
+		m = request.nc_url.pathname.match(
+			/^\/ws\/room\/drmario\/producer\/([a-zA-Z0-9-]+)/
+		);
+
+		request.is_drmario_secret_producer = !!m;
+
+		if (request.is_drmario_secret_producer) {
+			if (!request.drmario) {
+				request.drmario = {};
+			}
+
+			request.drmario.producer = {
+				connecting_user_secret: m[1],
+			};
+
+			const connecting_user = await UserDAO.getUserBySecret(
+				request.drmario.producer.connecting_user_secret
+			);
+
+			if (!connecting_user) {
+				socket.write('HTTP/1.1 404 Connecting User Not Found\r\n\r\n');
+				socket.destroy();
+				return;
+			}
+
+			if (!request.session) {
+				request.session = { save: passThrough }; // should never happen
+			}
+
+			request.session.user = {
+				id: connecting_user.id,
+				login: connecting_user.login,
+				secret: connecting_user.secret,
+				profile_image_url: connecting_user.profile_image_url,
+			};
+
+			request.session.save(() => {
+				wss.handleUpgrade(request, socket, head, function (ws) {
+					wss.emit('connection', ws, request);
+				});
+			});
+
+			return;
+		}
+
 		m = request.nc_url.pathname.match(
 			/^\/ws\/view\/([a-z0-9_-]+)\/([a-zA-Z0-9-]+)/
 		);
@@ -275,7 +390,13 @@ export default function init(server, wss) {
 
 		user.addConnection(connection);
 
-		if (request.is_secret_view) {
+		if (request.is_drmario_secret_view) {
+			console.log('WS: Adding Dr Mario View', user.login);
+			user.getDrMarioPrivateRoom().addView(connection);
+		} else if (request.is_drmario_secret_producer) {
+			console.log(`Dr Mario Secret Producer for ${user.login}`);
+			user.setDrMarioProducerConnection(connection);
+		} else if (request.is_secret_view) {
 			console.log(
 				'WS: Adding View',
 				user.login,

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Dr. Mario Producer (Versus)</title>
+		<style>
+			body {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				background: #111;
+				color: #eee;
+				padding: 16px;
+			}
+			h1 {
+				font-size: 1.2rem;
+			}
+			h3 {
+				font-size: 1rem;
+				margin-bottom: 4px;
+			}
+			section {
+				margin-bottom: 20px;
+			}
+			#preview-canvas {
+				max-width: 100%;
+				border: 1px solid #444;
+				cursor: crosshair;
+			}
+			#reference-canvas-holder canvas {
+				image-rendering: pixelated;
+				border: 1px solid #444;
+			}
+			.board-grid {
+				display: grid;
+				gap: 1px;
+				background: #333;
+				border: 1px solid #444;
+				width: max-content;
+			}
+			.board-cell {
+				width: 12px;
+				height: 12px;
+			}
+			.next-pill-cell {
+				display: inline-block;
+				width: 16px;
+				height: 16px;
+				margin-right: 2px;
+				border: 1px solid #444;
+				vertical-align: middle;
+			}
+			.stats {
+				font-size: 0.85rem;
+				color: #ccc;
+			}
+			.players {
+				display: flex;
+				gap: 32px;
+			}
+			label {
+				margin-right: 4px;
+			}
+			input[type='number'],
+			input[type='text'] {
+				width: 64px;
+			}
+			#broadcast-section input[type='text'] {
+				width: 280px;
+			}
+			.hint {
+				color: #999;
+				font-size: 0.85rem;
+			}
+			.round-state {
+				font-weight: bold;
+				color: #ff0;
+				min-height: 1.2em;
+			}
+			#event-log {
+				font-family: monospace;
+				font-size: 0.8rem;
+				background: #000;
+				border: 1px solid #444;
+				height: 200px;
+				overflow-y: auto;
+				padding: 4px 8px;
+			}
+			#broadcast-status {
+				font-weight: bold;
+			}
+			#broadcast-status.connected {
+				color: #6f6;
+			}
+			#broadcast-status.disconnected {
+				color: #f66;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Dr. Mario Producer -- Versus</h1>
+		<p class="hint">
+			Captures a single-system Dr. Mario Versus feed (one video source shows
+			both bottles) and streams it to the server for broadcast. Versus is the
+			only mode wired up so far -- see CLAUDE.md for the rest of the roadmap.
+		</p>
+
+		<section id="controls">
+			<label for="devices">Camera/capture device</label>
+			<select id="devices"></select>
+			<button id="use-camera">Use Camera</button>
+			<button id="use-screen">Use Screen/Window Capture</button>
+		</section>
+
+		<section id="calibration-section">
+			<h3>1. Calibrate</h3>
+			<p class="hint">
+				Click the top-left corner of the NES screen in the preview below, then
+				click the bottom-right corner. Fine-tune with the fields if needed.
+				Saved automatically.
+			</p>
+			<canvas id="preview-canvas"></canvas>
+			<div>
+				<label for="cal-x">X</label><input id="cal-x" type="number" />
+				<label for="cal-y">Y</label><input id="cal-y" type="number" />
+				<label for="cal-w">W</label><input id="cal-w" type="number" />
+				<label for="cal-h">H</label><input id="cal-h" type="number" />
+				<button id="cal-reset">Reset</button>
+			</div>
+		</section>
+
+		<section id="broadcast-section">
+			<h3>2. Broadcast</h3>
+			<p class="hint">
+				Your account secret (same one used for the Tetris producer). Saved
+				automatically.
+			</p>
+			<label for="secret">Secret</label>
+			<input id="secret" type="text" autocomplete="off" />
+			<button id="connect">Connect</button>
+			<button id="disconnect">Disconnect</button>
+			<span id="broadcast-status" class="disconnected">Disconnected</span>
+		</section>
+
+		<section id="reference-section">
+			<h3>3. Normalized view (what the OCR actually reads)</h3>
+			<div id="reference-canvas-holder"></div>
+		</section>
+
+		<section id="results-section">
+			<h3>4. Decoded state</h3>
+			<div class="players">
+				<div>
+					<h3>Player 1</h3>
+					<p class="round-state" id="round-1p"></p>
+					<div id="board-1p"></div>
+					<p>Next: <span id="next-1p"></span></p>
+					<p class="stats" id="stats-1p"></p>
+				</div>
+				<div>
+					<h3>Player 2</h3>
+					<p class="round-state" id="round-2p"></p>
+					<div id="board-2p"></div>
+					<p>Next: <span id="next-2p"></span></p>
+					<p class="stats" id="stats-2p"></p>
+				</div>
+			</div>
+			<p class="stats" id="crowns"></p>
+		</section>
+
+		<section id="event-log-section">
+			<h3>5. Round tracker events</h3>
+			<p class="hint">
+				For confirming capture/calibration is tracking correctly while you set
+				up -- not sent over the wire, the view re-derives these itself from the
+				same frame stream.
+			</p>
+			<div id="event-log"></div>
+		</section>
+
+		<video id="video" style="display: none" muted playsinline></video>
+
+		<script type="module" src="./producer.js"></script>
+	</body>
+</html>

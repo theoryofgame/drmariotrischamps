@@ -1,0 +1,254 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<style>
+			html,
+			body {
+				padding: 0;
+				margin: 0;
+			}
+
+			* {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				box-sizing: border-box;
+			}
+
+			#stream_bg {
+				width: 1280px;
+				height: 720px;
+				overflow: hidden;
+				background: #111;
+				color: #eee;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 64px;
+			}
+
+			.player {
+				text-align: center;
+			}
+
+			.player h2 {
+				margin: 0 0 8px;
+				font-size: 28px;
+			}
+
+			.round-state {
+				font-weight: bold;
+				color: #ff0;
+				min-height: 1.4em;
+				font-size: 20px;
+			}
+
+			.board-grid {
+				display: grid;
+				gap: 1px;
+				background: #333;
+				border: 2px solid #666;
+				width: max-content;
+				margin: 0 auto;
+			}
+
+			.board-cell {
+				width: 20px;
+				height: 20px;
+			}
+
+			.next-pill-cell {
+				display: inline-block;
+				width: 24px;
+				height: 24px;
+				margin-right: 2px;
+				border: 1px solid #666;
+				vertical-align: middle;
+			}
+
+			.stats {
+				font-size: 16px;
+				color: #ccc;
+				margin-top: 8px;
+			}
+
+			#crowns {
+				position: absolute;
+				top: 16px;
+				left: 50%;
+				transform: translateX(-50%);
+				font-size: 20px;
+				font-weight: bold;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="stream_bg">
+			<p id="crowns"></p>
+
+			<div class="player">
+				<h2>Player 1</h2>
+				<p class="round-state" id="round-1p"></p>
+				<div id="board-1p"></div>
+				<p>Next: <span id="next-1p"></span></p>
+				<p class="stats" id="stats-1p"></p>
+			</div>
+
+			<div class="player">
+				<h2>Player 2</h2>
+				<p class="round-state" id="round-2p"></p>
+				<div id="board-2p"></div>
+				<p>Next: <span id="next-2p"></span></p>
+				<p class="stats" id="stats-2p"></p>
+			</div>
+		</div>
+
+		<script type="module">
+			import Connection from '/js/connection.js';
+			import RoundTracker from '/producer/drmario/RoundTracker.js';
+			import { COLOR_PALETTE } from '/producer/drmario/constants.js';
+
+			// The Dr Mario producer/view WS paths live in their own namespace, separate from
+			// Tetris's -- so unlike every Tetris layout, this page can't just rely on
+			// Connection()'s "derive the ws:// URL from location.pathname" convenience (that
+			// would produce /ws/view/drmario_versus/<secret>, not this namespace's
+			// /ws/view/drmario/<layout>/<secret> -- see routes/websocket.js). Build the URL
+			// explicitly from the same path segments instead.
+			const [, , layout, secret] = location.pathname.split('/');
+			const wsProtocol = location.protocol.match(/^https/i) ? 'wss:' : 'ws:';
+			const connection = new Connection(
+				`${wsProtocol}//${location.host}/ws/view/drmario/${layout}/${secret}`
+			);
+
+			const trackers = {
+				player1: new RoundTracker(),
+				player2: new RoundTracker(),
+			};
+
+			// Same shared-round-boundary wiring as the producer's own operator-facing trackers
+			// (see producer.js) -- see RoundTracker.js's header comment for why both endRound()
+			// and syncRoundStart() are needed, not just one.
+			trackers.player1.addEventListener('round_end', event =>
+				trackers.player2.endRound(`opponent_${event.detail.outcome}`)
+			);
+			trackers.player2.addEventListener('round_end', event =>
+				trackers.player1.endRound(`opponent_${event.detail.outcome}`)
+			);
+			trackers.player1.addEventListener('round_start', event =>
+				trackers.player2.syncRoundStart({ roundId: event.detail.roundId })
+			);
+			trackers.player2.addEventListener('round_start', event =>
+				trackers.player1.syncRoundStart({ roundId: event.detail.roundId })
+			);
+
+			function colorFor(cell) {
+				if (!cell || cell.type === 'empty') return '#000';
+				if (cell.type === 'unknown') return '#888';
+
+				const rgb = COLOR_PALETTE[cell.color];
+				return rgb ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : '#f0f';
+			}
+
+			function backgroundFor(cell) {
+				const color = colorFor(cell);
+				if (!cell) return color;
+
+				if (cell.type === 'virus') {
+					return `radial-gradient(circle at center, #000 22%, ${color} 23%)`;
+				}
+
+				if (cell.type === 'clearing') {
+					return `radial-gradient(circle at center, #000 40%, ${color} 41%, ${color} 75%, #000 76%)`;
+				}
+
+				return color;
+			}
+
+			function renderBoard(container, board) {
+				container.innerHTML = '';
+
+				if (!board) return;
+
+				container.className = 'board-grid';
+				container.style.gridTemplateColumns = `repeat(${board[0].length}, 20px)`;
+
+				board.flat().forEach(cell => {
+					const div = document.createElement('div');
+					div.className = 'board-cell';
+					div.style.background = backgroundFor(cell);
+					container.appendChild(div);
+				});
+			}
+
+			function renderNextPill(container, nextPill) {
+				container.innerHTML = '';
+
+				if (!nextPill) return;
+
+				['left', 'right'].forEach(slot => {
+					const span = document.createElement('span');
+					span.className = 'next-pill-cell';
+					span.style.background = colorFor(nextPill[slot]);
+					container.appendChild(span);
+				});
+			}
+
+			function renderRoundState(element, state) {
+				if (state === 'playing' || state === null) {
+					element.textContent = '';
+				} else {
+					element.textContent = state.replace('_', ' ').toUpperCase();
+				}
+			}
+
+			function renderFrame(data) {
+				renderRoundState(
+					document.getElementById('round-1p'),
+					data.player1.result
+				);
+				renderRoundState(
+					document.getElementById('round-2p'),
+					data.player2.result
+				);
+				renderBoard(document.getElementById('board-1p'), data.player1.board);
+				renderBoard(document.getElementById('board-2p'), data.player2.board);
+				renderNextPill(
+					document.getElementById('next-1p'),
+					data.player1.nextPill
+				);
+				renderNextPill(
+					document.getElementById('next-2p'),
+					data.player2.nextPill
+				);
+
+				document.getElementById('stats-1p').textContent =
+					`Level ${data.player1.level ?? '?'} / Speed ${data.player1.speed ?? '?'} / Virus ${data.player1.virus ?? '?'}`;
+				document.getElementById('stats-2p').textContent =
+					`Level ${data.player2.level ?? '?'} / Speed ${data.player2.speed ?? '?'} / Virus ${data.player2.virus ?? '?'}`;
+				document.getElementById('crowns').textContent =
+					`P1 ${data.crowns.player1.wins} -- P2 ${data.crowns.player2.wins}`;
+
+				trackers.player1.processFrame(data.player1);
+				trackers.player2.processFrame(data.player2);
+			}
+
+			const API = {
+				frame(_player_idx, data) {
+					if (data.layout === 'versus') renderFrame(data);
+				},
+				message() {}, // noop
+			};
+
+			connection.onMessage = function (frame) {
+				try {
+					const [method, ...args] = frame;
+					API[method]?.apply(API, args);
+				} catch (e) {
+					console.error(e);
+				}
+			};
+		</script>
+	</body>
+</html>
