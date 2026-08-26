@@ -2,7 +2,7 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<title>Dr. Mario Producer (Versus)</title>
+		<title>Dr. Mario Producer</title>
 		<style>
 			body {
 				font-family:
@@ -99,14 +99,21 @@
 		</style>
 	</head>
 	<body>
-		<h1>Dr. Mario Producer -- Versus</h1>
+		<h1>Dr. Mario Producer</h1>
 		<p class="hint">
-			Captures a single-system Dr. Mario Versus feed (one video source shows
-			both bottles) and streams it to the server for broadcast. Versus is the
-			only mode wired up so far -- see CLAUDE.md for the rest of the roadmap.
+			Captures a Dr. Mario feed and streams it to the server for broadcast.
+			Single-player is "non-networked" only so far -- one producer, one private
+			room, no match-room/head-to-head support yet. See CLAUDE.md for the rest
+			of the roadmap.
 		</p>
 
 		<section id="controls">
+			<label for="layout">Layout</label>
+			<select id="layout">
+				<option value="single_player">Single Player</option>
+				<option value="versus">Versus</option>
+			</select>
+
 			<label for="devices">Camera/capture device</label>
 			<select id="devices"></select>
 			<button id="use-camera">Use Camera</button>
@@ -150,23 +157,7 @@
 
 		<section id="results-section">
 			<h3>4. Decoded state</h3>
-			<div class="players">
-				<div>
-					<h3>Player 1</h3>
-					<p class="round-state" id="round-1p"></p>
-					<div id="board-1p"></div>
-					<p>Next: <span id="next-1p"></span></p>
-					<p class="stats" id="stats-1p"></p>
-				</div>
-				<div>
-					<h3>Player 2</h3>
-					<p class="round-state" id="round-2p"></p>
-					<div id="board-2p"></div>
-					<p>Next: <span id="next-2p"></span></p>
-					<p class="stats" id="stats-2p"></p>
-				</div>
-			</div>
-			<p class="stats" id="crowns"></p>
+			<div id="results"></div>
 		</section>
 
 		<section id="event-log-section">

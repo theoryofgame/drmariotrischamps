@@ -1,8 +1,9 @@
 // Wiring for producer.html: video source selection, click-to-calibrate, live rendering of
 // whatever DrMarioOCR decodes each frame (for the operator to confirm capture is correct), and
-// streaming each frame to the server over a Connection for broadcast. Versus only -- see
-// CLAUDE.md for the single-player modes still to come. Adapted from harness.js; that file stays
-// a pure OCR-testing tool with no network connection, this one is the real capture pipeline.
+// streaming each frame to the server over a Connection for broadcast. Both single-player and
+// versus layouts -- see CLAUDE.md for what's still not wired up (networked/match-room
+// single-player). Adapted from harness.js; that file stays a pure OCR-testing tool with no
+// network connection, this one is the real capture pipeline.
 
 import { LAYOUT, REFERENCE_SIZE, COLOR_PALETTE } from './constants.js';
 import { DrMarioOCR } from './DrMarioOCR.js';
@@ -17,7 +18,9 @@ import {
 const video = document.getElementById('video');
 const previewCanvas = document.getElementById('preview-canvas');
 const previewCtx = previewCanvas.getContext('2d');
+const layoutSelect = document.getElementById('layout');
 const deviceSelect = document.getElementById('devices');
+const results = document.getElementById('results');
 const referenceHolder = document.getElementById('reference-canvas-holder');
 
 const calInputs = {
@@ -60,19 +63,20 @@ function loadCalibration() {
 }
 
 let calibration = loadCalibration();
-const ocr = new DrMarioOCR({ layout: LAYOUT.VERSUS, calibration });
+const ocr = new DrMarioOCR({ layout: layoutSelect.value, calibration });
 
 const referenceCanvas = ocr.getReferenceCanvas();
 referenceCanvas.style.width = `${REFERENCE_SIZE.w * 2}px`;
 referenceCanvas.style.height = `${REFERENCE_SIZE.h * 2}px`;
 referenceHolder.appendChild(referenceCanvas);
 
-// RoundTracker instances, cross-wired exactly as harness.js's versus mode already is -- this is
-// only for the operator's own event log while setting up; the view re-derives the same state
+// RoundTracker instance(s), rebuilt (not just reset) on layout change since a player-1-vs-
+// player-2 pair only makes sense once you're actually in versus mode -- same as harness.js. This
+// is only for the operator's own event log while setting up; the view re-derives the same state
 // itself from the same frame stream, it isn't sent over the wire.
-const trackers = { player1: new RoundTracker(), player2: new RoundTracker() };
 const eventLog = document.getElementById('event-log');
 const MAX_LOG_LINES = 100;
+let trackers = {};
 
 function formatDetailValue(key, value) {
 	if (key === 'cells' && Array.isArray(value)) {
@@ -105,21 +109,35 @@ function wireTracker(tracker, label) {
 		tracker.addEventListener(type, event => logTrackerEvent(label, event));
 	});
 }
-wireTracker(trackers.player1, '1P');
-wireTracker(trackers.player2, '2P');
 
-trackers.player1.addEventListener('round_end', event =>
-	trackers.player2.endRound(`opponent_${event.detail.outcome}`)
-);
-trackers.player2.addEventListener('round_end', event =>
-	trackers.player1.endRound(`opponent_${event.detail.outcome}`)
-);
-trackers.player1.addEventListener('round_start', event =>
-	trackers.player2.syncRoundStart({ roundId: event.detail.roundId })
-);
-trackers.player2.addEventListener('round_start', event =>
-	trackers.player1.syncRoundStart({ roundId: event.detail.roundId })
-);
+function buildTrackers() {
+	eventLog.innerHTML = '';
+
+	if (layoutSelect.value === LAYOUT.VERSUS) {
+		trackers = { player1: new RoundTracker(), player2: new RoundTracker() };
+		wireTracker(trackers.player1, '1P');
+		wireTracker(trackers.player2, '2P');
+
+		// Versus mode's round boundary is shared -- see RoundTracker.js's header comment for why
+		// both endRound() and syncRoundStart() are needed, not just one. Same wiring as
+		// drmario_versus.html's view.
+		trackers.player1.addEventListener('round_end', event =>
+			trackers.player2.endRound(`opponent_${event.detail.outcome}`)
+		);
+		trackers.player2.addEventListener('round_end', event =>
+			trackers.player1.endRound(`opponent_${event.detail.outcome}`)
+		);
+		trackers.player1.addEventListener('round_start', event =>
+			trackers.player2.syncRoundStart({ roundId: event.detail.roundId })
+		);
+		trackers.player2.addEventListener('round_start', event =>
+			trackers.player1.syncRoundStart({ roundId: event.detail.roundId })
+		);
+	} else {
+		trackers = { single: new RoundTracker() };
+		wireTracker(trackers.single, 'SP');
+	}
+}
 
 function updateCalInputs() {
 	calInputs.x.value = calibration ? Math.round(calibration.x) : '';
@@ -152,6 +170,12 @@ document.getElementById('cal-reset').addEventListener('click', () => {
 	ocr.setCalibration(null);
 	saveToStorage(CAL_STORAGE_KEY, null);
 	updateCalInputs();
+});
+
+layoutSelect.addEventListener('change', () => {
+	ocr.setConfig({ layout: layoutSelect.value, calibration });
+	buildResultsSkeleton();
+	buildTrackers();
 });
 
 let pendingCorner = null;
@@ -304,6 +328,41 @@ function renderNextPill(container, nextPill) {
 	});
 }
 
+function buildResultsSkeleton() {
+	if (layoutSelect.value === LAYOUT.VERSUS) {
+		results.innerHTML = `
+			<div class="players">
+				<div>
+					<h3>Player 1</h3>
+					<p class="round-state" id="round-1p"></p>
+					<div id="board-1p"></div>
+					<p>Next: <span id="next-1p"></span></p>
+					<p class="stats" id="stats-1p"></p>
+				</div>
+				<div>
+					<h3>Player 2</h3>
+					<p class="round-state" id="round-2p"></p>
+					<div id="board-2p"></div>
+					<p>Next: <span id="next-2p"></span></p>
+					<p class="stats" id="stats-2p"></p>
+				</div>
+			</div>
+			<p class="stats" id="crowns"></p>
+		`;
+	} else {
+		results.innerHTML = `
+			<p class="round-state" id="round-sp"></p>
+			<div id="board-sp"></div>
+			<p>Next: <span id="next-sp"></span></p>
+			<p class="stats" id="stats-sp"></p>
+		`;
+	}
+}
+buildResultsSkeleton();
+buildTrackers();
+
+// 'playing' is the ordinary state and not worth calling out; the others are. null means no
+// bottle on screen at all (pause/title/menu -- see ScreenOCR.js's hasBottle).
 function renderRoundState(element, state) {
 	if (state === 'playing') {
 		element.textContent = '';
@@ -315,22 +374,39 @@ function renderRoundState(element, state) {
 }
 
 function renderResult(result) {
-	renderRoundState(document.getElementById('round-1p'), result.player1.result);
-	renderRoundState(document.getElementById('round-2p'), result.player2.result);
-	renderBoard(document.getElementById('board-1p'), result.player1.board);
-	renderBoard(document.getElementById('board-2p'), result.player2.board);
-	renderNextPill(document.getElementById('next-1p'), result.player1.nextPill);
-	renderNextPill(document.getElementById('next-2p'), result.player2.nextPill);
+	if (result.layout === LAYOUT.VERSUS) {
+		renderRoundState(
+			document.getElementById('round-1p'),
+			result.player1.result
+		);
+		renderRoundState(
+			document.getElementById('round-2p'),
+			result.player2.result
+		);
+		renderBoard(document.getElementById('board-1p'), result.player1.board);
+		renderBoard(document.getElementById('board-2p'), result.player2.board);
+		renderNextPill(document.getElementById('next-1p'), result.player1.nextPill);
+		renderNextPill(document.getElementById('next-2p'), result.player2.nextPill);
 
-	document.getElementById('stats-1p').textContent =
-		`Level ${result.player1.level ?? '?'} / Speed ${result.player1.speed ?? '?'} / Virus ${result.player1.virus ?? '?'}`;
-	document.getElementById('stats-2p').textContent =
-		`Level ${result.player2.level ?? '?'} / Speed ${result.player2.speed ?? '?'} / Virus ${result.player2.virus ?? '?'}`;
-	document.getElementById('crowns').textContent =
-		`Crowns -- P1: ${result.crowns.player1.wins} / P2: ${result.crowns.player2.wins}`;
+		document.getElementById('stats-1p').textContent =
+			`Level ${result.player1.level ?? '?'} / Speed ${result.player1.speed ?? '?'} / Virus ${result.player1.virus ?? '?'}`;
+		document.getElementById('stats-2p').textContent =
+			`Level ${result.player2.level ?? '?'} / Speed ${result.player2.speed ?? '?'} / Virus ${result.player2.virus ?? '?'}`;
+		document.getElementById('crowns').textContent =
+			`Crowns -- P1: ${result.crowns.player1.wins} / P2: ${result.crowns.player2.wins}`;
 
-	trackers.player1.processFrame(result.player1);
-	trackers.player2.processFrame(result.player2);
+		trackers.player1.processFrame(result.player1);
+		trackers.player2.processFrame(result.player2);
+	} else {
+		renderRoundState(document.getElementById('round-sp'), result.result);
+		renderBoard(document.getElementById('board-sp'), result.board);
+		renderNextPill(document.getElementById('next-sp'), result.nextPill);
+
+		document.getElementById('stats-sp').textContent =
+			`Top ${result.top ?? '?'} / Score ${result.score ?? '?'} / Level ${result.level ?? '?'} / Speed ${result.speed ?? '?'} / Virus ${result.virus ?? '?'}`;
+
+		trackers.single.processFrame(result);
+	}
 }
 
 function loop() {

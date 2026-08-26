@@ -1,0 +1,188 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<style>
+			html,
+			body {
+				padding: 0;
+				margin: 0;
+			}
+
+			* {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				box-sizing: border-box;
+			}
+
+			#stream_bg {
+				width: 1280px;
+				height: 720px;
+				overflow: hidden;
+				background: #111;
+				color: #eee;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+			}
+
+			.player {
+				text-align: center;
+			}
+
+			.round-state {
+				font-weight: bold;
+				color: #ff0;
+				min-height: 1.4em;
+				font-size: 20px;
+			}
+
+			.board-grid {
+				display: grid;
+				gap: 1px;
+				background: #333;
+				border: 2px solid #666;
+				width: max-content;
+				margin: 0 auto;
+			}
+
+			.board-cell {
+				width: 20px;
+				height: 20px;
+			}
+
+			.next-pill-cell {
+				display: inline-block;
+				width: 24px;
+				height: 24px;
+				margin-right: 2px;
+				border: 1px solid #666;
+				vertical-align: middle;
+			}
+
+			.stats {
+				font-size: 16px;
+				color: #ccc;
+				margin-top: 8px;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="stream_bg">
+			<div class="player">
+				<p class="round-state" id="round-sp"></p>
+				<div id="board-sp"></div>
+				<p>Next: <span id="next-sp"></span></p>
+				<p class="stats" id="stats-sp"></p>
+			</div>
+		</div>
+
+		<script type="module">
+			import Connection from '/js/connection.js';
+			import RoundTracker from '/producer/drmario/RoundTracker.js';
+			import { COLOR_PALETTE } from '/producer/drmario/constants.js';
+
+			// See drmario_versus.html's comment -- the Dr Mario producer/view WS paths live in
+			// their own namespace, so this page builds the ws:// URL explicitly rather than
+			// relying on Connection()'s usual "derive it from location.pathname" convenience.
+			const [, , layout, secret] = location.pathname.split('/');
+			const wsProtocol = location.protocol.match(/^https/i) ? 'wss:' : 'ws:';
+			const connection = new Connection(
+				`${wsProtocol}//${location.host}/ws/view/drmario/${layout}/${secret}`
+			);
+
+			// Single-player has no shared round boundary to sync across bottles the way versus
+			// does (see RoundTracker.js's header comment) -- just the one instance.
+			const tracker = new RoundTracker();
+
+			function colorFor(cell) {
+				if (!cell || cell.type === 'empty') return '#000';
+				if (cell.type === 'unknown') return '#888';
+
+				const rgb = COLOR_PALETTE[cell.color];
+				return rgb ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : '#f0f';
+			}
+
+			function backgroundFor(cell) {
+				const color = colorFor(cell);
+				if (!cell) return color;
+
+				if (cell.type === 'virus') {
+					return `radial-gradient(circle at center, #000 22%, ${color} 23%)`;
+				}
+
+				if (cell.type === 'clearing') {
+					return `radial-gradient(circle at center, #000 40%, ${color} 41%, ${color} 75%, #000 76%)`;
+				}
+
+				return color;
+			}
+
+			function renderBoard(container, board) {
+				container.innerHTML = '';
+
+				if (!board) return;
+
+				container.className = 'board-grid';
+				container.style.gridTemplateColumns = `repeat(${board[0].length}, 20px)`;
+
+				board.flat().forEach(cell => {
+					const div = document.createElement('div');
+					div.className = 'board-cell';
+					div.style.background = backgroundFor(cell);
+					container.appendChild(div);
+				});
+			}
+
+			function renderNextPill(container, nextPill) {
+				container.innerHTML = '';
+
+				if (!nextPill) return;
+
+				['left', 'right'].forEach(slot => {
+					const span = document.createElement('span');
+					span.className = 'next-pill-cell';
+					span.style.background = colorFor(nextPill[slot]);
+					container.appendChild(span);
+				});
+			}
+
+			function renderRoundState(element, state) {
+				if (state === 'playing' || state === null) {
+					element.textContent = '';
+				} else {
+					element.textContent = state.replace('_', ' ').toUpperCase();
+				}
+			}
+
+			function renderFrame(data) {
+				renderRoundState(document.getElementById('round-sp'), data.result);
+				renderBoard(document.getElementById('board-sp'), data.board);
+				renderNextPill(document.getElementById('next-sp'), data.nextPill);
+
+				document.getElementById('stats-sp').textContent =
+					`Top ${data.top ?? '?'} / Score ${data.score ?? '?'} / Level ${data.level ?? '?'} / Speed ${data.speed ?? '?'} / Virus ${data.virus ?? '?'}`;
+
+				tracker.processFrame(data);
+			}
+
+			const API = {
+				frame(_player_idx, data) {
+					if (data.layout === 'single_player') renderFrame(data);
+				},
+				message() {}, // noop
+			};
+
+			connection.onMessage = function (frame) {
+				try {
+					const [method, ...args] = frame;
+					API[method]?.apply(API, args);
+				} catch (e) {
+					console.error(e);
+				}
+			};
+		</script>
+	</body>
+</html>
