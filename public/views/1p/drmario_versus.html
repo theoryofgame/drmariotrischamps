@@ -132,7 +132,9 @@
 		<script type="module">
 			import Connection from '/js/connection.js';
 			import RoundTracker from '/producer/drmario/RoundTracker.js';
-			import LiveMetrics from '/producer/drmario/LiveMetrics.js';
+			import LiveMetrics, {
+				SALT_SECONDS_PER_ROW,
+			} from '/producer/drmario/LiveMetrics.js';
 			import { COLOR_PALETTE } from '/producer/drmario/constants.js';
 
 			// The Dr Mario producer/view WS paths live in their own namespace, separate from
@@ -218,18 +220,29 @@
 
 			// Garbage a wave sent to the OPPONENT's bottle is credited to the SENDER's own stats
 			// -- same cross-player coordination pattern as endRound()/syncRoundStart() above, just
-			// on garbage_entered instead of round_start/round_end.
+			// on garbage_entered instead of round_start/round_end. Also kicks off the SALT
+			// count-up animation (see startSaltCountUp below) timed to the wave's real fall
+			// duration, rather than just jumping the displayed number straight to the new total.
+			function creditGarbageSent(senderKey, event) {
+				const { cells, maxRestRows } = event.detail;
+				stats[senderKey === '1p' ? 'player1' : 'player2'].recordGarbageSent({
+					cellCount: cells.length,
+					maxRestRows,
+				});
+				const newTotal =
+					stats[senderKey === '1p' ? 'player1' : 'player2'].getSnapshot()
+						.saltSeconds;
+				startSaltCountUp(
+					senderKey,
+					newTotal,
+					maxRestRows * SALT_SECONDS_PER_ROW
+				);
+			}
 			trackers.player1.addEventListener('garbage_entered', event =>
-				stats.player2.recordGarbageSent({
-					cellCount: event.detail.cells.length,
-					maxRestRows: event.detail.maxRestRows,
-				})
+				creditGarbageSent('2p', event)
 			);
 			trackers.player2.addEventListener('garbage_entered', event =>
-				stats.player1.recordGarbageSent({
-					cellCount: event.detail.cells.length,
-					maxRestRows: event.detail.maxRestRows,
-				})
+				creditGarbageSent('1p', event)
 			);
 
 			// Droughts are only worth calling out once they're notable -- below this, the raw
@@ -272,6 +285,63 @@
 				}
 			}
 
+			// SALT "counts up" in sync with the wave's actual fall (see recordGarbageSent's
+			// comment in LiveMetrics.js -- the cumulative total is always correct instantly, this
+			// is purely a display animation on top of it). Always animates from wherever it's
+			// currently displayed, not from the pre-wave total, so overlapping waves just re-aim
+			// at the new (higher) target instead of stacking separate animations.
+			const saltDisplay = {
+				'1p': {
+					current: 0,
+					from: 0,
+					target: 0,
+					start: 0,
+					duration: 0,
+					rafId: null,
+				},
+				'2p': {
+					current: 0,
+					from: 0,
+					target: 0,
+					start: 0,
+					duration: 0,
+					rafId: null,
+				},
+			};
+			const latestSnapshot = { '1p': null, '2p': null };
+
+			function renderGarbageStats(playerKey) {
+				const s = latestSnapshot[playerKey];
+				if (!s) return;
+				const salt = saltDisplay[playerKey].current;
+				document.getElementById(`garbage-stats-${playerKey}`).textContent =
+					`Combos: ${s.garbageWavesSent} (${s.garbageWavesSentPerMinute.toFixed(1)}/min) / CUR ${s.averageGarbageWaveSize.toFixed(3)} / SALT ${salt.toFixed(1)}s`;
+			}
+
+			function tickSalt(playerKey) {
+				const anim = saltDisplay[playerKey];
+				const t = Math.min((performance.now() - anim.start) / anim.duration, 1);
+				anim.current = anim.from + (anim.target - anim.from) * t;
+				renderGarbageStats(playerKey);
+
+				if (t < 1) {
+					anim.rafId = requestAnimationFrame(() => tickSalt(playerKey));
+				} else {
+					anim.rafId = null;
+				}
+			}
+
+			function startSaltCountUp(playerKey, targetSalt, durationSeconds) {
+				const anim = saltDisplay[playerKey];
+				anim.from = anim.current;
+				anim.target = targetSalt;
+				anim.start = performance.now();
+				anim.duration = Math.max(durationSeconds * 1000, 1);
+				if (!anim.rafId) {
+					anim.rafId = requestAnimationFrame(() => tickSalt(playerKey));
+				}
+			}
+
 			function renderStats(playerKey, s) {
 				latestStatusHtml[playerKey] = s.isRushing
 					? `<span class="rush">RUSH x${s.rushStreak}!</span>`
@@ -280,8 +350,21 @@
 
 				document.getElementById(`run-stats-${playerKey}`).textContent =
 					`${s.piecesPerMinute.toFixed(1)} pieces/min / ${s.virusClearsPerMinute.toFixed(1)} virus/min`;
-				document.getElementById(`garbage-stats-${playerKey}`).textContent =
-					`Combos: ${s.garbageWavesSent} (${s.garbageWavesSentPerMinute.toFixed(1)}/min) / CUR ${s.averageGarbageWaveSize.toFixed(3)} / SALT ${s.saltSeconds.toFixed(1)}s`;
+
+				latestSnapshot[playerKey] = s;
+
+				const anim = saltDisplay[playerKey];
+				if (s.saltSeconds < anim.target) {
+					// LiveMetrics reset (round_start/resetRun) beat a still-running count-up to the
+					// punch -- the authoritative total is now lower than what we were animating
+					// toward, so stop chasing a stale target and snap straight to the real value.
+					if (anim.rafId) cancelAnimationFrame(anim.rafId);
+					anim.rafId = null;
+					anim.current = s.saltSeconds;
+					anim.target = s.saltSeconds;
+				}
+
+				renderGarbageStats(playerKey);
 			}
 
 			stats.player1.addEventListener('stats_updated', e =>
