@@ -124,7 +124,9 @@ export default class LiveMetrics extends EventTarget {
 	// own LiveMetrics -- the consumer calls this on player A's tracker when player B's
 	// garbage_entered fires. Cross-player coordination living in the consumer, not either
 	// per-bottle instance, mirrors RoundTracker.js's endRound()/syncRoundStart() split for exactly
-	// the same reason.
+	// the same reason. Feeds garbageWavesSent (a plain running total -- views display this as
+	// "combos", the term the user actually uses for a wave of garbage) plus the derived
+	// per-minute rate, average wave size, and SALT.
 	recordGarbageSent({ cellCount, maxRestRows }) {
 		this.#garbageWavesSent++;
 		this.#garbageCellsSent += cellCount;
@@ -175,6 +177,7 @@ export default class LiveMetrics extends EventTarget {
 			rushStreak: this.#rushStreak,
 			maxRushStreak: this.#maxRushStreak,
 			isRushing: this.#rushStreak >= RUSH_MIN_LENGTH,
+			garbageWavesSent: this.#garbageWavesSent,
 			garbageWavesSentPerMinute: rate(this.#garbageWavesSent),
 			averageGarbageWaveSize:
 				this.#garbageWavesSent > 0

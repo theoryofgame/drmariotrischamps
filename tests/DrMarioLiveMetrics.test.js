@@ -196,12 +196,14 @@ describe('LiveMetrics', () => {
 			stats.recordGarbageSent({ cellCount: 4, maxRestRows: 8 }); // 2s
 
 			const snapshot = stats.getSnapshot();
+			expect(snapshot.garbageWavesSent).toBe(2);
 			expect(snapshot.averageGarbageWaveSize).toBe(3); // (2 + 4) / 2 waves
 			expect(snapshot.saltSeconds).toBeCloseTo(3); // 4*0.25 + 8*0.25
 		});
 
-		it('reports 0 average wave size and SALT before any wave has been recorded', () => {
+		it('reports 0 waves sent, average wave size, and SALT before any wave has been recorded', () => {
 			const snapshot = stats.getSnapshot();
+			expect(snapshot.garbageWavesSent).toBe(0);
 			expect(snapshot.averageGarbageWaveSize).toBe(0);
 			expect(snapshot.saltSeconds).toBe(0);
 		});
