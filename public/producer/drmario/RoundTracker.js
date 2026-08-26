@@ -74,7 +74,7 @@
 //   ever suggests otherwise.
 //
 // Two more events exist purely to feed a stats layer built on top of this file (see
-// StatsTracker.js), not for round-lifecycle purposes: virus_cleared fires whenever the tracked
+// LiveMetrics.js), not for round-lifecycle purposes: virus_cleared fires whenever the tracked
 // virus count drops during PLAYING (silent before now -- #virusCount was only ever read
 // internally, e.g. to freeze it into round_end's detail), and garbage_entered's cells gain a
 // restRows field (plus a wave-level maxRestRows) -- a purely geometric "how many rows will this

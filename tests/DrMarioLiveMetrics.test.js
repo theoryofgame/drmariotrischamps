@@ -7,12 +7,12 @@ import {
 	jest,
 } from '@jest/globals';
 import RoundTracker from '../public/producer/drmario/RoundTracker.js';
-import StatsTracker from '../public/producer/drmario/StatsTracker.js';
+import LiveMetrics from '../public/producer/drmario/LiveMetrics.js';
 import { COLS, ROWS } from '../public/producer/drmario/constants.js';
 
-// StatsTracker only ever reacts to RoundTracker's own events, never raw pixels, so it's tested
+// LiveMetrics only ever reacts to RoundTracker's own events, never raw pixels, so it's tested
 // the same way RoundTracker itself is: small hand-built frame sequences driving a real
-// RoundTracker, with a real StatsTracker listening in -- there's no OCR involved in what either
+// RoundTracker, with a real LiveMetrics listening in -- there's no OCR involved in what either
 // does.
 
 function emptyBoard() {
@@ -65,7 +65,7 @@ function spawnPiece(tracker, leftColor, rightColor, virus = 0) {
 	tracker.processFrame(frame({ virus }));
 }
 
-describe('StatsTracker', () => {
+describe('LiveMetrics', () => {
 	let roundTracker, stats;
 
 	beforeEach(() => {
@@ -80,7 +80,7 @@ describe('StatsTracker', () => {
 
 	describe('rate stats', () => {
 		beforeEach(() => {
-			stats = new StatsTracker(roundTracker);
+			stats = new LiveMetrics(roundTracker);
 		});
 
 		it('computes pieces/minute from pieces placed since the run started', () => {
@@ -115,7 +115,7 @@ describe('StatsTracker', () => {
 
 	describe('color droughts', () => {
 		beforeEach(() => {
-			stats = new StatsTracker(roundTracker);
+			stats = new LiveMetrics(roundTracker);
 			roundTracker.processFrame(frame({ virus: 0 })); // round_start
 		});
 
@@ -145,7 +145,7 @@ describe('StatsTracker', () => {
 
 	describe('rush streak', () => {
 		beforeEach(() => {
-			stats = new StatsTracker(roundTracker);
+			stats = new LiveMetrics(roundTracker);
 			roundTracker.processFrame(frame({ virus: 0 })); // round_start
 		});
 
@@ -188,7 +188,7 @@ describe('StatsTracker', () => {
 
 	describe('garbage sent (versus)', () => {
 		beforeEach(() => {
-			stats = new StatsTracker(roundTracker);
+			stats = new LiveMetrics(roundTracker);
 		});
 
 		it('accumulates waves sent, average wave size, and SALT across multiple calls', () => {
@@ -209,7 +209,7 @@ describe('StatsTracker', () => {
 
 	describe('run vs. round reset (single-player carryAcrossLevels)', () => {
 		it('does not reset running stats across a stage_clear -> next round_start, with carryAcrossLevels', () => {
-			stats = new StatsTracker(roundTracker, { carryAcrossLevels: true });
+			stats = new LiveMetrics(roundTracker, { carryAcrossLevels: true });
 
 			roundTracker.processFrame(frame({ virus: 0 })); // round_start
 			spawnPiece(roundTracker, 'red', 'blue');
@@ -226,7 +226,7 @@ describe('StatsTracker', () => {
 		});
 
 		it('does reset when the previous round ended in game_over, even with carryAcrossLevels', () => {
-			stats = new StatsTracker(roundTracker, { carryAcrossLevels: true });
+			stats = new LiveMetrics(roundTracker, { carryAcrossLevels: true });
 
 			roundTracker.processFrame(frame({ virus: 0 })); // round_start
 			spawnPiece(roundTracker, 'red', 'blue');
@@ -242,7 +242,7 @@ describe('StatsTracker', () => {
 		});
 
 		it('resets on every round_start regardless of outcome when carryAcrossLevels is not set (versus default)', () => {
-			stats = new StatsTracker(roundTracker); // default: no carryAcrossLevels
+			stats = new LiveMetrics(roundTracker); // default: no carryAcrossLevels
 
 			roundTracker.processFrame(frame({ virus: 0 })); // round_start
 			spawnPiece(roundTracker, 'red', 'blue');
@@ -260,7 +260,7 @@ describe('StatsTracker', () => {
 
 	describe('resetRun()', () => {
 		it('manually zeroes everything regardless of automatic detection', () => {
-			stats = new StatsTracker(roundTracker, { carryAcrossLevels: true });
+			stats = new LiveMetrics(roundTracker, { carryAcrossLevels: true });
 
 			roundTracker.processFrame(frame({ virus: 0 }));
 			spawnPiece(roundTracker, 'red', 'blue');
@@ -277,7 +277,7 @@ describe('StatsTracker', () => {
 
 	describe('stats_updated event', () => {
 		it('fires with a snapshot on every change', () => {
-			stats = new StatsTracker(roundTracker);
+			stats = new LiveMetrics(roundTracker);
 			const events = [];
 			stats.addEventListener('stats_updated', e => events.push(e.detail));
 

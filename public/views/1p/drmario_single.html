@@ -98,7 +98,7 @@
 		<script type="module">
 			import Connection from '/js/connection.js';
 			import RoundTracker from '/producer/drmario/RoundTracker.js';
-			import StatsTracker from '/producer/drmario/StatsTracker.js';
+			import LiveMetrics from '/producer/drmario/LiveMetrics.js';
 			import { COLOR_PALETTE } from '/producer/drmario/constants.js';
 
 			// See drmario_versus.html's comment -- the Dr Mario producer/view WS paths live in
@@ -115,10 +115,10 @@
 			const tracker = new RoundTracker();
 
 			// carryAcrossLevels: single-player's round boundary fires on every level (a
-			// stage_clear just advances to a harder one, same playthrough) -- see StatsTracker.js's
+			// stage_clear just advances to a harder one, same playthrough) -- see LiveMetrics.js's
 			// header comment for why rate/streak/drought stats need to span the whole playthrough
 			// rather than resetting on every level-up.
-			const stats = new StatsTracker(tracker, { carryAcrossLevels: true });
+			const stats = new LiveMetrics(tracker, { carryAcrossLevels: true });
 			const runStatsEl = document.getElementById('run-stats');
 
 			stats.addEventListener('stats_updated', event => {

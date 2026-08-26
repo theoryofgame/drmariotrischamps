@@ -7,6 +7,13 @@
 // here. Pure logic, EventTarget-based, no DOM -- same discipline as RoundTracker.js, fully
 // unit-testable without a browser.
 //
+// Named LiveMetrics, not the more obvious "StatsTracker" -- that name was tried first and shipped,
+// but real playtesting found ad/tracker-blocker extensions (uBlock Origin etc.) silently blocking
+// the network request for a file whose name matched "stats" + "tracker", the exact substrings
+// generic analytics-blocking filter lists key on (confirmed live: ERR_BLOCKED_BY_CLIENT on
+// StatsTracker.js, while the sibling RoundTracker.js -- no "stats" in its name -- loaded fine).
+// Renamed to sidestep that entirely rather than asking every viewer to allowlist the domain.
+//
 // One instance tracks one bottle, same as RoundTracker. Dispatches a single 'stats_updated' event
 // (detail = a full snapshot via getSnapshot()) on any change, rather than one event per stat, so
 // a view only needs one listener.
@@ -17,7 +24,7 @@ const COLORS = Object.keys(COLOR_PALETTE);
 const RUSH_MIN_LENGTH = 4; // pieces; below this, isRushing is false even though raw counting continues
 const SALT_SECONDS_PER_ROW = 0.25; // garbage falls at a constant rate regardless of game speed
 
-export default class StatsTracker extends EventTarget {
+export default class LiveMetrics extends EventTarget {
 	#carryAcrossLevels;
 	#roundId = null;
 	#runStartTime = null;
@@ -114,7 +121,7 @@ export default class StatsTracker extends EventTarget {
 	}
 
 	// Versus only. Garbage a wave sent to the OPPONENT's bottle is credited here, on the SENDER's
-	// own StatsTracker -- the consumer calls this on player A's tracker when player B's
+	// own LiveMetrics -- the consumer calls this on player A's tracker when player B's
 	// garbage_entered fires. Cross-player coordination living in the consumer, not either
 	// per-bottle instance, mirrors RoundTracker.js's endRound()/syncRoundStart() split for exactly
 	// the same reason.

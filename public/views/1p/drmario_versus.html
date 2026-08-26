@@ -117,7 +117,7 @@
 		<script type="module">
 			import Connection from '/js/connection.js';
 			import RoundTracker from '/producer/drmario/RoundTracker.js';
-			import StatsTracker from '/producer/drmario/StatsTracker.js';
+			import LiveMetrics from '/producer/drmario/LiveMetrics.js';
 			import { COLOR_PALETTE } from '/producer/drmario/constants.js';
 
 			// The Dr Mario producer/view WS paths live in their own namespace, separate from
@@ -154,11 +154,11 @@
 			);
 
 			// carryAcrossLevels defaults to false (versus's simpler per-round reset -- see
-			// StatsTracker.js's header comment; versus has no "advance to a harder level, same
+			// LiveMetrics.js's header comment; versus has no "advance to a harder level, same
 			// run" concept the way single-player does).
 			const stats = {
-				player1: new StatsTracker(trackers.player1),
-				player2: new StatsTracker(trackers.player2),
+				player1: new LiveMetrics(trackers.player1),
+				player2: new LiveMetrics(trackers.player2),
 			};
 
 			// Garbage a wave sent to the OPPONENT's bottle is credited to the SENDER's own stats
