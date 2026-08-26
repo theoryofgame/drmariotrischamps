@@ -32,6 +32,7 @@ const calInputs = {
 
 const CAL_STORAGE_KEY = 'drmario_producer_calibration';
 const SECRET_STORAGE_KEY = 'drmario_producer_secret';
+const LAYOUT_STORAGE_KEY = 'drmario_producer_layout';
 
 function loadFromStorage(key) {
 	try {
@@ -63,6 +64,15 @@ function loadCalibration() {
 }
 
 let calibration = loadCalibration();
+
+// Unlike harness.js (a pure testing tool, where defaulting to whatever <option> happens to come
+// first in the markup is harmless), this page's layout choice controls what actually gets
+// broadcast -- silently defaulting to single-player on every reload previously sent
+// single-player-shaped frames to a versus view expecting `layout: 'versus'`, which just ignores
+// them, making the broadcast look dead. Persisted the same way calibration/secret already are,
+// defaulting to versus (this page's original hardcoded-only mode) when nothing's been saved yet.
+layoutSelect.value = loadFromStorage(LAYOUT_STORAGE_KEY) || LAYOUT.VERSUS;
+
 const ocr = new DrMarioOCR({ layout: layoutSelect.value, calibration });
 
 const referenceCanvas = ocr.getReferenceCanvas();
@@ -173,6 +183,7 @@ document.getElementById('cal-reset').addEventListener('click', () => {
 });
 
 layoutSelect.addEventListener('change', () => {
+	saveToStorage(LAYOUT_STORAGE_KEY, layoutSelect.value);
 	ocr.setConfig({ layout: layoutSelect.value, calibration });
 	buildResultsSkeleton();
 	buildTrackers();
