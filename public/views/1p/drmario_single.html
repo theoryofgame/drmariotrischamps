@@ -67,6 +67,19 @@
 				color: #ccc;
 				margin-top: 8px;
 			}
+
+			.rush {
+				color: #f80;
+				font-weight: bold;
+			}
+
+			#reset-run {
+				position: absolute;
+				bottom: 12px;
+				right: 12px;
+				font-size: 12px;
+				opacity: 0.5;
+			}
 		</style>
 	</head>
 	<body>
@@ -76,12 +89,16 @@
 				<div id="board-sp"></div>
 				<p>Next: <span id="next-sp"></span></p>
 				<p class="stats" id="stats-sp"></p>
+				<p class="stats" id="run-stats"></p>
 			</div>
 		</div>
+
+		<button id="reset-run">Reset run stats</button>
 
 		<script type="module">
 			import Connection from '/js/connection.js';
 			import RoundTracker from '/producer/drmario/RoundTracker.js';
+			import StatsTracker from '/producer/drmario/StatsTracker.js';
 			import { COLOR_PALETTE } from '/producer/drmario/constants.js';
 
 			// See drmario_versus.html's comment -- the Dr Mario producer/view WS paths live in
@@ -96,6 +113,25 @@
 			// Single-player has no shared round boundary to sync across bottles the way versus
 			// does (see RoundTracker.js's header comment) -- just the one instance.
 			const tracker = new RoundTracker();
+
+			// carryAcrossLevels: single-player's round boundary fires on every level (a
+			// stage_clear just advances to a harder one, same playthrough) -- see StatsTracker.js's
+			// header comment for why rate/streak/drought stats need to span the whole playthrough
+			// rather than resetting on every level-up.
+			const stats = new StatsTracker(tracker, { carryAcrossLevels: true });
+			const runStatsEl = document.getElementById('run-stats');
+
+			stats.addEventListener('stats_updated', event => {
+				const s = event.detail;
+				const rushText = s.isRushing
+					? `<span class="rush">RUSH x${s.rushStreak}!</span>`
+					: `Droughts R:${s.colorDroughts.red} B:${s.colorDroughts.blue} Y:${s.colorDroughts.yellow}`;
+				runStatsEl.innerHTML = `${s.piecesPerMinute.toFixed(1)} pieces/min / ${s.virusClearsPerMinute.toFixed(1)} virus/min -- ${rushText}`;
+			});
+
+			document.getElementById('reset-run').addEventListener('click', () => {
+				stats.resetRun();
+			});
 
 			function colorFor(cell) {
 				if (!cell || cell.type === 'empty') return '#000';

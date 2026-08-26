@@ -74,6 +74,11 @@
 				margin-top: 8px;
 			}
 
+			.rush {
+				color: #f80;
+				font-weight: bold;
+			}
+
 			#crowns {
 				position: absolute;
 				top: 16px;
@@ -94,6 +99,8 @@
 				<div id="board-1p"></div>
 				<p>Next: <span id="next-1p"></span></p>
 				<p class="stats" id="stats-1p"></p>
+				<p class="stats" id="run-stats-1p"></p>
+				<p class="stats" id="garbage-stats-1p"></p>
 			</div>
 
 			<div class="player">
@@ -102,12 +109,15 @@
 				<div id="board-2p"></div>
 				<p>Next: <span id="next-2p"></span></p>
 				<p class="stats" id="stats-2p"></p>
+				<p class="stats" id="run-stats-2p"></p>
+				<p class="stats" id="garbage-stats-2p"></p>
 			</div>
 		</div>
 
 		<script type="module">
 			import Connection from '/js/connection.js';
 			import RoundTracker from '/producer/drmario/RoundTracker.js';
+			import StatsTracker from '/producer/drmario/StatsTracker.js';
 			import { COLOR_PALETTE } from '/producer/drmario/constants.js';
 
 			// The Dr Mario producer/view WS paths live in their own namespace, separate from
@@ -141,6 +151,47 @@
 			);
 			trackers.player2.addEventListener('round_start', event =>
 				trackers.player1.syncRoundStart({ roundId: event.detail.roundId })
+			);
+
+			// carryAcrossLevels defaults to false (versus's simpler per-round reset -- see
+			// StatsTracker.js's header comment; versus has no "advance to a harder level, same
+			// run" concept the way single-player does).
+			const stats = {
+				player1: new StatsTracker(trackers.player1),
+				player2: new StatsTracker(trackers.player2),
+			};
+
+			// Garbage a wave sent to the OPPONENT's bottle is credited to the SENDER's own stats
+			// -- same cross-player coordination pattern as endRound()/syncRoundStart() above, just
+			// on garbage_entered instead of round_start/round_end.
+			trackers.player1.addEventListener('garbage_entered', event =>
+				stats.player2.recordGarbageSent({
+					cellCount: event.detail.cells.length,
+					maxRestRows: event.detail.maxRestRows,
+				})
+			);
+			trackers.player2.addEventListener('garbage_entered', event =>
+				stats.player1.recordGarbageSent({
+					cellCount: event.detail.cells.length,
+					maxRestRows: event.detail.maxRestRows,
+				})
+			);
+
+			function renderStats(playerKey, s) {
+				const rushText = s.isRushing
+					? `<span class="rush">RUSH x${s.rushStreak}!</span>`
+					: `Droughts R:${s.colorDroughts.red} B:${s.colorDroughts.blue} Y:${s.colorDroughts.yellow}`;
+				document.getElementById(`run-stats-${playerKey}`).innerHTML =
+					`${s.piecesPerMinute.toFixed(1)} pieces/min / ${s.virusClearsPerMinute.toFixed(1)} virus/min -- ${rushText}`;
+				document.getElementById(`garbage-stats-${playerKey}`).textContent =
+					`Sent: ${s.garbageWavesSentPerMinute.toFixed(1)} waves/min / avg ${s.averageGarbageWaveSize.toFixed(1)} cells / SALT ${s.saltSeconds.toFixed(2)}s`;
+			}
+
+			stats.player1.addEventListener('stats_updated', e =>
+				renderStats('1p', e.detail)
+			);
+			stats.player2.addEventListener('stats_updated', e =>
+				renderStats('2p', e.detail)
 			);
 
 			function colorFor(cell) {

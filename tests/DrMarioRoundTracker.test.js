@@ -63,7 +63,8 @@ describe('RoundTracker', () => {
 			'round_ready',
 			'round_end',
 			'piece_entered',
-			'garbage_entered'
+			'garbage_entered',
+			'virus_cleared'
 		);
 	});
 
@@ -665,7 +666,8 @@ describe('RoundTracker', () => {
 					type: 'garbage_entered',
 					detail: {
 						roundId: 1,
-						cells: [{ col: 0, shape: 'single', color: 'red' }],
+						cells: [{ col: 0, shape: 'single', color: 'red', restRows: 16 }],
+						maxRestRows: 16, // empty column -- falls all the way to the floor
 					},
 				},
 			]);
@@ -693,10 +695,11 @@ describe('RoundTracker', () => {
 					detail: {
 						roundId: 1,
 						cells: [
-							{ col: 0, shape: 'single', color: 'red' },
-							{ col: 2, shape: 'single', color: 'blue' },
-							{ col: 6, shape: 'single', color: 'yellow' },
+							{ col: 0, shape: 'single', color: 'red', restRows: 16 },
+							{ col: 2, shape: 'single', color: 'blue', restRows: 16 },
+							{ col: 6, shape: 'single', color: 'yellow', restRows: 16 },
 						],
+						maxRestRows: 16,
 					},
 				},
 			]);
@@ -768,7 +771,8 @@ describe('RoundTracker', () => {
 					type: 'garbage_entered',
 					detail: {
 						roundId: 1,
-						cells: [{ col: 0, shape: 'single', color: 'blue' }],
+						cells: [{ col: 0, shape: 'single', color: 'blue', restRows: 16 }],
+						maxRestRows: 16,
 					},
 				},
 			]);
@@ -793,7 +797,8 @@ describe('RoundTracker', () => {
 					type: 'garbage_entered',
 					detail: {
 						roundId: 1,
-						cells: [{ col: 3, shape: 'single', color: 'red' }],
+						cells: [{ col: 3, shape: 'single', color: 'red', restRows: 16 }],
+						maxRestRows: 16,
 					},
 				},
 			]);
@@ -815,6 +820,101 @@ describe('RoundTracker', () => {
 
 			expect(events.filter(e => e.type === 'piece_entered')).toEqual([]);
 			expect(events.filter(e => e.type === 'garbage_entered')).toHaveLength(1);
+		});
+
+		it('gives a 1-row minimum when the column is already blocked right below the spawn row', () => {
+			tracker.processFrame(frame({ virus: 0 }));
+			events.length = 0;
+
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 0, row: 0, type: 'pill', shape: 'single', color: 'red' },
+						{ col: 0, row: 1, type: 'pill', shape: 'left', color: 'blue' }, // already there
+					],
+				})
+			);
+
+			expect(events).toEqual([
+				{
+					type: 'garbage_entered',
+					detail: {
+						roundId: 1,
+						cells: [{ col: 0, shape: 'single', color: 'red', restRows: 1 }],
+						maxRestRows: 1,
+					},
+				},
+			]);
+		});
+
+		it('reports the farthest-falling cell in a wave as maxRestRows, not just any one cell', () => {
+			tracker.processFrame(frame({ virus: 0 }));
+			events.length = 0;
+
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 0, row: 0, type: 'pill', shape: 'single', color: 'red' },
+						{ col: 0, row: 1, type: 'pill', shape: 'left', color: 'blue' }, // blocks col 0
+						{ col: 2, row: 0, type: 'pill', shape: 'single', color: 'yellow' }, // col 2 empty below
+					],
+				})
+			);
+
+			const [event] = events;
+			expect(event.detail.cells.find(c => c.col === 0).restRows).toBe(1);
+			expect(event.detail.cells.find(c => c.col === 2).restRows).toBe(16);
+			expect(event.detail.maxRestRows).toBe(16);
+		});
+	});
+
+	describe('virus clear detection', () => {
+		it('fires with the delta when the virus count drops during ordinary play', () => {
+			tracker.processFrame(frame({ level: 0, virus: 4 })); // round_start + round_ready
+			events.length = 0;
+
+			tracker.processFrame(frame({ virus: 3 }));
+
+			expect(events).toEqual([
+				{
+					type: 'virus_cleared',
+					detail: { roundId: 1, count: 1, virusCount: 3 },
+				},
+			]);
+		});
+
+		it('reports the correct delta even if multiple viruses clear between two polled frames', () => {
+			tracker.processFrame(frame({ level: 0, virus: 4 }));
+			events.length = 0;
+
+			tracker.processFrame(frame({ virus: 1 })); // 3 cleared between polls
+
+			expect(events).toEqual([
+				{
+					type: 'virus_cleared',
+					detail: { roundId: 1, count: 3, virusCount: 1 },
+				},
+			]);
+		});
+
+		it('does not fire while still populating -- a rising virus count is population, not a clear', () => {
+			tracker.processFrame(frame({ level: 0, virus: 0 })); // round_start
+			events.length = 0;
+
+			tracker.processFrame(frame({ level: 0, virus: 2 })); // still climbing toward target 4
+
+			expect(events.filter(e => e.type === 'virus_cleared')).toEqual([]);
+		});
+
+		it('does not fire when the virus count stays the same', () => {
+			tracker.processFrame(frame({ level: 0, virus: 4 }));
+			events.length = 0;
+
+			tracker.processFrame(frame({ virus: 4 }));
+
+			expect(events).toEqual([]);
 		});
 	});
 });

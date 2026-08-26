@@ -73,10 +73,18 @@
 //   hand-built frame sequences and one live-harness repro) -- worth rechecking if a live session
 //   ever suggests otherwise.
 //
+// Two more events exist purely to feed a stats layer built on top of this file (see
+// StatsTracker.js), not for round-lifecycle purposes: virus_cleared fires whenever the tracked
+// virus count drops during PLAYING (silent before now -- #virusCount was only ever read
+// internally, e.g. to freeze it into round_end's detail), and garbage_entered's cells gain a
+// restRows field (plus a wave-level maxRestRows) -- a purely geometric "how many rows will this
+// newly-arrived half fall before resting, inclusive of the spawn row" computed once at the
+// moment of arrival using the board already in hand, not tracked live as it actually falls.
+//
 // One instance tracks one bottle. Versus mode (two independent bottles) should use two
 // instances, the same way Tetris runs one GameTracker per OcrPlayer.
 
-import { COLS } from './constants.js';
+import { COLS, ROWS } from './constants.js';
 
 const PHASE = {
 	UNKNOWN: 'unknown', // no round boundary observed yet
@@ -152,6 +160,21 @@ function descentRegionMask(board) {
 // there since baseline was captured, not just that content happens to still be there.
 function gainedPillContent(baseline, current) {
 	return current.some((occupied, i) => occupied && !baseline[i]);
+}
+
+// How many rows a garbage half newly arrived at row 0 in this column will fall before resting,
+// inclusive of the spawn row itself -- a piece that can't move down at all (row 1 already
+// occupied) still counts as 1 row, per confirmed spec, not 0. Purely geometric: scans downward
+// from row 1 for the first occupied cell (or the floor), stopping there.
+function restRowsForColumn(board, col) {
+	let restingRow = 0;
+
+	for (let row = 1; row < ROWS; row++) {
+		if (board[row][col].type !== 'empty') break;
+		restingRow = row;
+	}
+
+	return restingRow + 1;
 }
 
 export default class RoundTracker extends EventTarget {
@@ -267,7 +290,31 @@ export default class RoundTracker extends EventTarget {
 				);
 			}
 		} else {
+			const previousVirusCount = this.#virusCount;
 			this.#virusCount = frame.virus ?? this.#virusCount;
+
+			// A drop during ordinary play can only mean viruses were cleared (population only
+			// ever counts up, handled separately above) -- reports the delta, not just a boolean,
+			// so a poll that misses an intermediate frame (e.g. two viruses cleared between two
+			// polls) still attributes the right total. Known, disclosed limitation: a single bad
+			// OCR reading of a lower virus count would fire a spurious event here -- same category
+			// of risk as every other OCR-derived heuristic in this file, not worth over-engineering
+			// against without real capture data showing it actually happens.
+			if (
+				previousVirusCount !== null &&
+				this.#virusCount !== null &&
+				this.#virusCount < previousVirusCount
+			) {
+				this.dispatchEvent(
+					new CustomEvent('virus_cleared', {
+						detail: {
+							roundId: this.#roundId,
+							count: previousVirusCount - this.#virusCount,
+							virusCount: this.#virusCount,
+						},
+					})
+				);
+			}
 		}
 
 		this.#detectPieceEntries(frame.board, frame.nextPill);
@@ -390,7 +437,10 @@ export default class RoundTracker extends EventTarget {
 	// re-arming is needed the way piece detection has: a real spawn can look like it "re-enters"
 	// the same spot via lateral movement or rotation, but a cell can only ever go directly from
 	// empty to 'single' by something dropping in from outside (see isGarbageHalf) -- there's no
-	// equivalent false re-trigger to guard against here.
+	// equivalent false re-trigger to guard against here. Each cell also gets a restRows (see
+	// restRowsForColumn) for a stats layer's benefit -- unused by round-lifecycle logic itself --
+	// plus maxRestRows on the event as a whole (the farthest-falling cell in the wave), since a
+	// consumer wanting "how stunning was this wave" shouldn't need to recompute a max itself.
 	#detectGarbageEntries(board) {
 		const newCells = [];
 		const topRowEmpty = [];
@@ -399,7 +449,12 @@ export default class RoundTracker extends EventTarget {
 			const cell = board[0][col];
 
 			if (this.#topRowEmpty[col] && isGarbageHalf(cell)) {
-				newCells.push({ col, shape: cell.shape, color: cell.color });
+				newCells.push({
+					col,
+					shape: cell.shape,
+					color: cell.color,
+					restRows: restRowsForColumn(board, col),
+				});
 			}
 
 			topRowEmpty.push(!cell || cell.type === 'empty');
@@ -408,7 +463,11 @@ export default class RoundTracker extends EventTarget {
 		if (newCells.length > 0) {
 			this.dispatchEvent(
 				new CustomEvent('garbage_entered', {
-					detail: { roundId: this.#roundId, cells: newCells },
+					detail: {
+						roundId: this.#roundId,
+						cells: newCells,
+						maxRestRows: Math.max(...newCells.map(cell => cell.restRows)),
+					},
 				})
 			);
 		}
