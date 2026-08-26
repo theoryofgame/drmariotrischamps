@@ -73,6 +73,10 @@
 				font-weight: bold;
 			}
 
+			.drought {
+				font-weight: bold;
+			}
+
 			#reset-run {
 				position: absolute;
 				bottom: 12px;
@@ -121,12 +125,33 @@
 			const stats = new LiveMetrics(tracker, { carryAcrossLevels: true });
 			const runStatsEl = document.getElementById('run-stats');
 
+			// Droughts are only worth calling out once they're notable -- below this, the raw
+			// counts are still tracked (see LiveMetrics.js), just not surfaced here.
+			const DROUGHT_DISPLAY_THRESHOLD = 5;
+
+			function rgbFor(colorName) {
+				const rgb = COLOR_PALETTE[colorName];
+				return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+			}
+
+			// Same selective treatment as rush: silent unless there's something worth flagging. Only
+			// the worst-drought color is shown (of the 3 colors, more than one can cross the
+			// threshold at once if a single color has been spawning repeatedly), colored to match
+			// that color's own pill so it reads at a glance without a label.
+			function droughtStatusHtml(colorDroughts) {
+				const [color, count] = Object.entries(colorDroughts).reduce(
+					(best, cur) => (cur[1] > best[1] ? cur : best)
+				);
+				if (count < DROUGHT_DISPLAY_THRESHOLD) return '';
+				return `<span class="drought" style="color: ${rgbFor(color)}">${color.toUpperCase()} DROUGHT x${count}</span>`;
+			}
+
 			stats.addEventListener('stats_updated', event => {
 				const s = event.detail;
-				const rushText = s.isRushing
+				const statusHtml = s.isRushing
 					? `<span class="rush">RUSH x${s.rushStreak}!</span>`
-					: `Droughts R:${s.colorDroughts.red} B:${s.colorDroughts.blue} Y:${s.colorDroughts.yellow}`;
-				runStatsEl.innerHTML = `${s.piecesPerMinute.toFixed(1)} pieces/min / ${s.virusClearsPerMinute.toFixed(1)} virus/min -- ${rushText}`;
+					: droughtStatusHtml(s.colorDroughts);
+				runStatsEl.innerHTML = `${s.piecesPerMinute.toFixed(1)} pieces/min / ${s.virusClearsPerMinute.toFixed(1)} virus/min${statusHtml ? ` -- ${statusHtml}` : ''}`;
 			});
 
 			document.getElementById('reset-run').addEventListener('click', () => {

@@ -79,6 +79,10 @@
 				font-weight: bold;
 			}
 
+			.drought {
+				font-weight: bold;
+			}
+
 			#crowns {
 				position: absolute;
 				top: 16px;
@@ -177,12 +181,33 @@
 				})
 			);
 
+			// Droughts are only worth calling out once they're notable -- below this, the raw
+			// counts are still tracked (see LiveMetrics.js), just not surfaced here.
+			const DROUGHT_DISPLAY_THRESHOLD = 5;
+
+			function rgbFor(colorName) {
+				const rgb = COLOR_PALETTE[colorName];
+				return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+			}
+
+			// Same selective treatment as rush: silent unless there's something worth flagging. Only
+			// the worst-drought color is shown (of the 3 colors, more than one can cross the
+			// threshold at once if a single color has been spawning repeatedly), colored to match
+			// that color's own pill so it reads at a glance without a label.
+			function droughtStatusHtml(colorDroughts) {
+				const [color, count] = Object.entries(colorDroughts).reduce(
+					(best, cur) => (cur[1] > best[1] ? cur : best)
+				);
+				if (count < DROUGHT_DISPLAY_THRESHOLD) return '';
+				return `<span class="drought" style="color: ${rgbFor(color)}">${color.toUpperCase()} DROUGHT x${count}</span>`;
+			}
+
 			function renderStats(playerKey, s) {
-				const rushText = s.isRushing
+				const statusHtml = s.isRushing
 					? `<span class="rush">RUSH x${s.rushStreak}!</span>`
-					: `Droughts R:${s.colorDroughts.red} B:${s.colorDroughts.blue} Y:${s.colorDroughts.yellow}`;
+					: droughtStatusHtml(s.colorDroughts);
 				document.getElementById(`run-stats-${playerKey}`).innerHTML =
-					`${s.piecesPerMinute.toFixed(1)} pieces/min / ${s.virusClearsPerMinute.toFixed(1)} virus/min -- ${rushText}`;
+					`${s.piecesPerMinute.toFixed(1)} pieces/min / ${s.virusClearsPerMinute.toFixed(1)} virus/min${statusHtml ? ` -- ${statusHtml}` : ''}`;
 				document.getElementById(`garbage-stats-${playerKey}`).textContent =
 					`Sent: ${s.garbageWavesSentPerMinute.toFixed(1)} waves/min / avg ${s.averageGarbageWaveSize.toFixed(1)} cells / SALT ${s.saltSeconds.toFixed(2)}s`;
 			}
