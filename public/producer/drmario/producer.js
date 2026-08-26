@@ -33,6 +33,8 @@ const calInputs = {
 const CAL_STORAGE_KEY = 'drmario_producer_calibration';
 const SECRET_STORAGE_KEY = 'drmario_producer_secret';
 const LAYOUT_STORAGE_KEY = 'drmario_producer_layout';
+const PLAYER1_NAME_STORAGE_KEY = 'drmario_producer_player1_name';
+const PLAYER2_NAME_STORAGE_KEY = 'drmario_producer_player2_name';
 
 function loadFromStorage(key) {
 	try {
@@ -187,6 +189,21 @@ layoutSelect.addEventListener('change', () => {
 	ocr.setConfig({ layout: layoutSelect.value, calibration });
 	buildResultsSkeleton();
 	buildTrackers();
+});
+
+// Player names (versus only) -- attached to every outgoing versus frame (see loop()) rather than
+// sent as a one-off message, so a view that connects after the operator has already set them
+// still picks them up on the very next frame instead of being stuck with the defaults until the
+// operator happens to retype something.
+const player1NameInput = document.getElementById('player1-name');
+const player2NameInput = document.getElementById('player2-name');
+player1NameInput.value = loadFromStorage(PLAYER1_NAME_STORAGE_KEY) || '';
+player2NameInput.value = loadFromStorage(PLAYER2_NAME_STORAGE_KEY) || '';
+player1NameInput.addEventListener('input', () => {
+	saveToStorage(PLAYER1_NAME_STORAGE_KEY, player1NameInput.value);
+});
+player2NameInput.addEventListener('input', () => {
+	saveToStorage(PLAYER2_NAME_STORAGE_KEY, player2NameInput.value);
 });
 
 let pendingCorner = null;
@@ -440,6 +457,13 @@ function loop() {
 
 	const result = ocr.processVideoFrame({ video });
 	if (!result) return;
+
+	if (result.layout === LAYOUT.VERSUS) {
+		result.playerNames = {
+			player1: player1NameInput.value.trim() || 'Player 1',
+			player2: player2NameInput.value.trim() || 'Player 2',
+		};
+	}
 
 	renderResult(result);
 

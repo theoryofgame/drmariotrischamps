@@ -109,7 +109,7 @@
 			<p id="round-timer"></p>
 
 			<div class="player">
-				<h2>Player 1</h2>
+				<h2 id="player-name-1p">Player 1</h2>
 				<p class="round-state" id="round-1p"></p>
 				<div id="board-1p"></div>
 				<p>Next: <span id="next-1p"></span></p>
@@ -119,7 +119,7 @@
 			</div>
 
 			<div class="player">
-				<h2>Player 2</h2>
+				<h2 id="player-name-2p">Player 2</h2>
 				<p class="round-state" id="round-2p"></p>
 				<div id="board-2p"></div>
 				<p>Next: <span id="next-2p"></span></p>
@@ -344,6 +344,11 @@
 			}
 
 			function renderFrame(data) {
+				document.getElementById('player-name-1p').textContent =
+					data.playerNames?.player1 ?? 'Player 1';
+				document.getElementById('player-name-2p').textContent =
+					data.playerNames?.player2 ?? 'Player 2';
+
 				latestResult['1p'] = data.player1.result;
 				latestResult['2p'] = data.player2.result;
 				updateRoundStateDisplay('1p');

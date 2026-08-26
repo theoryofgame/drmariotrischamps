@@ -69,6 +69,9 @@
 			#broadcast-section input[type='text'] {
 				width: 280px;
 			}
+			#player-names-section input[type='text'] {
+				width: 140px;
+			}
 			.hint {
 				color: #999;
 				font-size: 0.85rem;
@@ -118,6 +121,27 @@
 			<select id="devices"></select>
 			<button id="use-camera">Use Camera</button>
 			<button id="use-screen">Use Screen/Window Capture</button>
+		</section>
+
+		<section id="player-names-section">
+			<h3>Player names (versus)</h3>
+			<p class="hint">
+				Shown as each bottle's header in the versus view. Saved automatically.
+			</p>
+			<label for="player1-name">Player 1</label>
+			<input
+				id="player1-name"
+				type="text"
+				placeholder="Player 1"
+				autocomplete="off"
+			/>
+			<label for="player2-name">Player 2</label>
+			<input
+				id="player2-name"
+				type="text"
+				placeholder="Player 2"
+				autocomplete="off"
+			/>
 		</section>
 
 		<section id="calibration-section">
