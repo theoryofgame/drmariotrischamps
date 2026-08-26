@@ -22,7 +22,9 @@ import { COLOR_PALETTE } from './constants.js';
 
 const COLORS = Object.keys(COLOR_PALETTE);
 const RUSH_MIN_LENGTH = 4; // pieces; below this, isRushing is false even though raw counting continues
-const SALT_SECONDS_PER_ROW = 0.25; // garbage falls at a constant rate regardless of game speed
+// Garbage falls at a constant rate regardless of game speed. 0.2667s/row per the user's own
+// figure (corrected from an initial 0.25s/row estimate used when this was first built).
+const SALT_SECONDS_PER_ROW = 0.2667;
 
 export default class LiveMetrics extends EventTarget {
 	#carryAcrossLevels;

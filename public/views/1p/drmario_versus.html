@@ -281,7 +281,7 @@
 				document.getElementById(`run-stats-${playerKey}`).textContent =
 					`${s.piecesPerMinute.toFixed(1)} pieces/min / ${s.virusClearsPerMinute.toFixed(1)} virus/min`;
 				document.getElementById(`garbage-stats-${playerKey}`).textContent =
-					`Combos: ${s.garbageWavesSent} (${s.garbageWavesSentPerMinute.toFixed(1)}/min) / CUR ${s.averageGarbageWaveSize.toFixed(1)} / SALT ${s.saltSeconds.toFixed(2)}s`;
+					`Combos: ${s.garbageWavesSent} (${s.garbageWavesSentPerMinute.toFixed(1)}/min) / CUR ${s.averageGarbageWaveSize.toFixed(3)} / SALT ${s.saltSeconds.toFixed(1)}s`;
 			}
 
 			stats.player1.addEventListener('stats_updated', e =>
