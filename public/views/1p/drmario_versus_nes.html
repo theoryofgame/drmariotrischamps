@@ -1,0 +1,484 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<style>
+			html,
+			body {
+				padding: 0;
+				margin: 0;
+			}
+
+			* {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				box-sizing: border-box;
+			}
+
+			#stream_bg {
+				position: relative;
+				width: 1280px;
+				height: 720px;
+				overflow: hidden;
+				background: #111;
+				color: #eee;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 64px;
+			}
+
+			.player {
+				text-align: center;
+			}
+
+			.player h2 {
+				margin: 0 0 8px;
+				font-size: 28px;
+			}
+
+			.round-state {
+				font-weight: bold;
+				color: #ff0;
+				min-height: 1.4em;
+				font-size: 20px;
+			}
+
+			.board-canvas {
+				background: #000;
+				border: 2px solid #666;
+			}
+
+			.next-pill-cell {
+				display: inline-block;
+				width: 24px;
+				height: 24px;
+				margin-right: 2px;
+				border: 1px solid #666;
+				vertical-align: middle;
+			}
+
+			.stats {
+				font-size: 16px;
+				color: #ccc;
+				margin-top: 8px;
+			}
+
+			.rush {
+				color: #f80;
+				font-weight: bold;
+			}
+
+			.drought {
+				font-weight: bold;
+			}
+
+			#crowns {
+				position: absolute;
+				top: 16px;
+				left: 50%;
+				transform: translateX(-50%);
+				font-size: 20px;
+				font-weight: bold;
+			}
+
+			#round-timer {
+				position: absolute;
+				top: 44px;
+				left: 50%;
+				transform: translateX(-50%);
+				font-size: 16px;
+				color: #ccc;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="stream_bg">
+			<p id="crowns"></p>
+			<p id="round-timer"></p>
+
+			<div class="player">
+				<h2 id="player-name-1p">Player 1</h2>
+				<p class="round-state" id="round-1p"></p>
+				<canvas class="board-canvas" id="board-1p"></canvas>
+				<p>Next: <span id="next-1p"></span></p>
+				<p class="stats" id="stats-1p"></p>
+				<p class="stats" id="run-stats-1p"></p>
+				<p class="stats" id="garbage-stats-1p"></p>
+			</div>
+
+			<div class="player">
+				<h2 id="player-name-2p">Player 2</h2>
+				<p class="round-state" id="round-2p"></p>
+				<canvas class="board-canvas" id="board-2p"></canvas>
+				<p>Next: <span id="next-2p"></span></p>
+				<p class="stats" id="stats-2p"></p>
+				<p class="stats" id="run-stats-2p"></p>
+				<p class="stats" id="garbage-stats-2p"></p>
+			</div>
+		</div>
+
+		<script type="module">
+			import Connection from '/js/connection.js';
+			import RoundTracker from '/producer/drmario/RoundTracker.js';
+			import LiveMetrics, {
+				SALT_SECONDS_PER_ROW,
+			} from '/producer/drmario/LiveMetrics.js';
+			import {
+				drawCell,
+				currentVirusFrame,
+			} from '/producer/drmario/CellRenderer.js';
+			import {
+				COLOR_PALETTE,
+				COLS,
+				ROWS,
+			} from '/producer/drmario/constants.js';
+
+			// The Dr Mario producer/view WS paths live in their own namespace, separate from
+			// Tetris's -- so unlike every Tetris layout, this page can't just rely on
+			// Connection()'s "derive the ws:// URL from location.pathname" convenience (that
+			// would produce /ws/view/drmario_versus_nes/<secret>, not this namespace's
+			// /ws/view/drmario/<layout>/<secret> -- see routes/websocket.js). Build the URL
+			// explicitly from the same path segments instead.
+			const [, , layout, secret] = location.pathname.split('/');
+			const wsProtocol = location.protocol.match(/^https/i) ? 'wss:' : 'ws:';
+			const connection = new Connection(
+				`${wsProtocol}//${location.host}/ws/view/drmario/${layout}/${secret}`
+			);
+
+			const trackers = {
+				player1: new RoundTracker(),
+				player2: new RoundTracker(),
+			};
+
+			// Same shared-round-boundary wiring as the producer's own operator-facing trackers
+			// (see producer.js) -- see RoundTracker.js's header comment for why both endRound()
+			// and syncRoundStart() are needed, not just one.
+			trackers.player1.addEventListener('round_end', event =>
+				trackers.player2.endRound(`opponent_${event.detail.outcome}`)
+			);
+			trackers.player2.addEventListener('round_end', event =>
+				trackers.player1.endRound(`opponent_${event.detail.outcome}`)
+			);
+			trackers.player1.addEventListener('round_start', event =>
+				trackers.player2.syncRoundStart({ roundId: event.detail.roundId })
+			);
+			trackers.player2.addEventListener('round_start', event =>
+				trackers.player1.syncRoundStart({ roundId: event.detail.roundId })
+			);
+
+			// Round timer: versus's round boundary is shared (see the cross-wiring above), so both
+			// trackers' round_start/round_end fire for the same roundId within a frame or two of
+			// each other -- the roundId dedup below just means "first one wins" rather than double-
+			// resetting/re-freezing on the second tracker's own copy of the same transition. Freezes
+			// at whatever it last showed once a round ends, rather than blanking, so the final split
+			// stays readable until the next round_start resets it.
+			const roundTimerEl = document.getElementById('round-timer');
+			let roundStartTime = null;
+			let roundActive = false;
+			let currentRoundId = null;
+
+			function handleRoundStart(detail) {
+				if (roundActive && detail.roundId === currentRoundId) return;
+				currentRoundId = detail.roundId;
+				roundStartTime = Date.now();
+				roundActive = true;
+				roundTimerEl.textContent = '0:00';
+			}
+
+			function handleRoundEnd() {
+				roundActive = false;
+			}
+
+			trackers.player1.addEventListener('round_start', e =>
+				handleRoundStart(e.detail)
+			);
+			trackers.player2.addEventListener('round_start', e =>
+				handleRoundStart(e.detail)
+			);
+			trackers.player1.addEventListener('round_end', handleRoundEnd);
+			trackers.player2.addEventListener('round_end', handleRoundEnd);
+
+			setInterval(() => {
+				if (!roundActive) return;
+				const totalSeconds = Math.floor((Date.now() - roundStartTime) / 1000);
+				const m = Math.floor(totalSeconds / 60);
+				const s = totalSeconds % 60;
+				roundTimerEl.textContent = `${m}:${String(s).padStart(2, '0')}`;
+			}, 250);
+
+			// carryAcrossLevels defaults to false (versus's simpler per-round reset -- see
+			// LiveMetrics.js's header comment; versus has no "advance to a harder level, same
+			// run" concept the way single-player does).
+			const stats = {
+				player1: new LiveMetrics(trackers.player1),
+				player2: new LiveMetrics(trackers.player2),
+			};
+
+			// Garbage a wave sent to the OPPONENT's bottle is credited to the SENDER's own stats
+			// -- same cross-player coordination pattern as endRound()/syncRoundStart() above, just
+			// on garbage_entered instead of round_start/round_end. Also kicks off the SALT
+			// count-up animation (see startSaltCountUp below) timed to the wave's real fall
+			// duration, rather than just jumping the displayed number straight to the new total.
+			function creditGarbageSent(senderKey, event) {
+				const { cells, maxRestRows } = event.detail;
+				stats[senderKey === '1p' ? 'player1' : 'player2'].recordGarbageSent({
+					cellCount: cells.length,
+					maxRestRows,
+				});
+				const newTotal =
+					stats[senderKey === '1p' ? 'player1' : 'player2'].getSnapshot()
+						.saltSeconds;
+				startSaltCountUp(
+					senderKey,
+					newTotal,
+					maxRestRows * SALT_SECONDS_PER_ROW
+				);
+			}
+			trackers.player1.addEventListener('garbage_entered', event =>
+				creditGarbageSent('2p', event)
+			);
+			trackers.player2.addEventListener('garbage_entered', event =>
+				creditGarbageSent('1p', event)
+			);
+
+			// Droughts are only worth calling out once they're notable -- below this, the raw
+			// counts are still tracked (see LiveMetrics.js), just not surfaced here.
+			const DROUGHT_DISPLAY_THRESHOLD = 5;
+
+			function rgbFor(colorName) {
+				const rgb = COLOR_PALETTE[colorName];
+				return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+			}
+
+			// Same selective treatment as rush: silent unless there's something worth flagging. Only
+			// the worst-drought color is shown (of the 3 colors, more than one can cross the
+			// threshold at once if a single color has been spawning repeatedly), colored to match
+			// that color's own pill so it reads at a glance without a label.
+			function droughtStatusHtml(colorDroughts) {
+				const [color, count] = Object.entries(colorDroughts).reduce(
+					(best, cur) => (cur[1] > best[1] ? cur : best)
+				);
+				if (count < DROUGHT_DISPLAY_THRESHOLD) return '';
+				return `<span class="drought" style="color: ${rgbFor(color)}">${color.toUpperCase()} DROUGHT x${count}</span>`;
+			}
+
+			// The round-state element (top of each bottle -- where STAGE CLEAR/GAME OVER/TOPOUT
+			// show) doubles as the rush/drought callout while a round is just in ordinary play: the
+			// game's own state naturally takes priority (a round actually ending is more important
+			// than a drought), and the two can never really compete for attention since round-state
+			// text only ever appears when result isn't 'playing', exactly when there's nothing to
+			// show here anyway.
+			const latestResult = { '1p': null, '2p': null };
+			const latestStatusHtml = { '1p': '', '2p': '' };
+
+			function updateRoundStateDisplay(playerKey) {
+				const element = document.getElementById(`round-${playerKey}`);
+				const state = latestResult[playerKey];
+				if (state === 'playing' || state === null) {
+					element.innerHTML = latestStatusHtml[playerKey];
+				} else {
+					element.textContent = state.replace('_', ' ').toUpperCase();
+				}
+			}
+
+			// SALT "counts up" in sync with the wave's actual fall (see recordGarbageSent's
+			// comment in LiveMetrics.js -- the cumulative total is always correct instantly, this
+			// is purely a display animation on top of it). Always animates from wherever it's
+			// currently displayed, not from the pre-wave total, so overlapping waves just re-aim
+			// at the new (higher) target instead of stacking separate animations.
+			const saltDisplay = {
+				'1p': {
+					current: 0,
+					from: 0,
+					target: 0,
+					start: 0,
+					duration: 0,
+					rafId: null,
+				},
+				'2p': {
+					current: 0,
+					from: 0,
+					target: 0,
+					start: 0,
+					duration: 0,
+					rafId: null,
+				},
+			};
+			const latestSnapshot = { '1p': null, '2p': null };
+
+			function renderGarbageStats(playerKey) {
+				const s = latestSnapshot[playerKey];
+				if (!s) return;
+				const salt = saltDisplay[playerKey].current;
+				document.getElementById(`garbage-stats-${playerKey}`).textContent =
+					`Combos: ${s.garbageWavesSent} (${s.garbageWavesSentPerMinute.toFixed(1)}/min) / CUR ${s.averageGarbageWaveSize.toFixed(3)} / SALT ${salt.toFixed(1)}s`;
+			}
+
+			function tickSalt(playerKey) {
+				const anim = saltDisplay[playerKey];
+				const t = Math.min((performance.now() - anim.start) / anim.duration, 1);
+				anim.current = anim.from + (anim.target - anim.from) * t;
+				renderGarbageStats(playerKey);
+
+				if (t < 1) {
+					anim.rafId = requestAnimationFrame(() => tickSalt(playerKey));
+				} else {
+					anim.rafId = null;
+				}
+			}
+
+			function startSaltCountUp(playerKey, targetSalt, durationSeconds) {
+				const anim = saltDisplay[playerKey];
+				anim.from = anim.current;
+				anim.target = targetSalt;
+				anim.start = performance.now();
+				anim.duration = Math.max(durationSeconds * 1000, 1);
+				if (!anim.rafId) {
+					anim.rafId = requestAnimationFrame(() => tickSalt(playerKey));
+				}
+			}
+
+			function renderStats(playerKey, s) {
+				latestStatusHtml[playerKey] = s.isRushing
+					? `<span class="rush">RUSH x${s.rushStreak}!</span>`
+					: droughtStatusHtml(s.colorDroughts);
+				updateRoundStateDisplay(playerKey);
+
+				document.getElementById(`run-stats-${playerKey}`).textContent =
+					`${s.piecesPerMinute.toFixed(1)} pieces/min / ${s.virusClearsPerMinute.toFixed(1)} virus/min`;
+
+				latestSnapshot[playerKey] = s;
+
+				const anim = saltDisplay[playerKey];
+				if (s.saltSeconds < anim.target) {
+					// LiveMetrics reset (round_start/resetRun) beat a still-running count-up to the
+					// punch -- the authoritative total is now lower than what we were animating
+					// toward, so stop chasing a stale target and snap straight to the real value.
+					if (anim.rafId) cancelAnimationFrame(anim.rafId);
+					anim.rafId = null;
+					anim.current = s.saltSeconds;
+					anim.target = s.saltSeconds;
+				}
+
+				renderGarbageStats(playerKey);
+			}
+
+			stats.player1.addEventListener('stats_updated', e =>
+				renderStats('1p', e.detail)
+			);
+			stats.player2.addEventListener('stats_updated', e =>
+				renderStats('2p', e.detail)
+			);
+
+			function colorFor(cell) {
+				if (!cell || cell.type === 'empty') return '#000';
+				if (cell.type === 'unknown') return '#888';
+
+				const rgb = COLOR_PALETTE[cell.color];
+				return rgb ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : '#f0f';
+			}
+
+			// The bottle grid itself renders real NES sprite art via CellRenderer.js (pill
+			// halves/singles, animated viruses) instead of flat colored squares -- see
+			// CLAUDE.md's notes on this layout for why this exists as a separate file rather than
+			// replacing drmario_versus.html in place. Everything else on this page (next-pill
+			// preview, stats text, round-state banner) intentionally still uses the plain
+			// colorFor()-based rendering below -- explicitly out of scope for this pass.
+			const CELL_PX = 24; // 3x the native 8px NES tile -- a clean integer scale
+
+			function renderBoard(canvas, board) {
+				const ctx = canvas.getContext('2d');
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+				if (!board) return;
+
+				const virusFrame = currentVirusFrame();
+				board.forEach((row, rowIdx) => {
+					row.forEach((cell, colIdx) => {
+						drawCell(
+							ctx,
+							colIdx * CELL_PX,
+							rowIdx * CELL_PX,
+							CELL_PX,
+							cell,
+							virusFrame
+						);
+					});
+				});
+			}
+
+			function renderNextPill(container, nextPill) {
+				container.innerHTML = '';
+
+				if (!nextPill) return;
+
+				['left', 'right'].forEach(slot => {
+					const span = document.createElement('span');
+					span.className = 'next-pill-cell';
+					span.style.background = colorFor(nextPill[slot]);
+					container.appendChild(span);
+				});
+			}
+
+			function renderFrame(data) {
+				document.getElementById('player-name-1p').textContent =
+					data.playerNames?.player1 ?? 'Player 1';
+				document.getElementById('player-name-2p').textContent =
+					data.playerNames?.player2 ?? 'Player 2';
+
+				latestResult['1p'] = data.player1.result;
+				latestResult['2p'] = data.player2.result;
+				updateRoundStateDisplay('1p');
+				updateRoundStateDisplay('2p');
+
+				renderBoard(document.getElementById('board-1p'), data.player1.board);
+				renderBoard(document.getElementById('board-2p'), data.player2.board);
+				renderNextPill(
+					document.getElementById('next-1p'),
+					data.player1.nextPill
+				);
+				renderNextPill(
+					document.getElementById('next-2p'),
+					data.player2.nextPill
+				);
+
+				document.getElementById('stats-1p').textContent =
+					`Level ${data.player1.level ?? '?'} / Speed ${data.player1.speed ?? '?'} / Virus ${data.player1.virus ?? '?'}`;
+				document.getElementById('stats-2p').textContent =
+					`Level ${data.player2.level ?? '?'} / Speed ${data.player2.speed ?? '?'} / Virus ${data.player2.virus ?? '?'}`;
+				document.getElementById('crowns').textContent =
+					`P1 ${data.crowns.player1.wins} -- P2 ${data.crowns.player2.wins}`;
+
+				trackers.player1.processFrame(data.player1);
+				trackers.player2.processFrame(data.player2);
+			}
+
+			// Board canvases are sized here (not via HTML width/height attributes) so COLS/ROWS/
+			// CELL_PX all come from one place.
+			['board-1p', 'board-2p'].forEach(id => {
+				const canvas = document.getElementById(id);
+				canvas.width = COLS * CELL_PX;
+				canvas.height = ROWS * CELL_PX;
+			});
+
+			const API = {
+				frame(_player_idx, data) {
+					if (data.layout === 'versus') renderFrame(data);
+				},
+				message() {}, // noop
+			};
+
+			connection.onMessage = function (frame) {
+				try {
+					const [method, ...args] = frame;
+					API[method]?.apply(API, args);
+				} catch (e) {
+					console.error(e);
+				}
+			};
+		</script>
+	</body>
+</html>
