@@ -22,12 +22,13 @@ import { COLOR_PALETTE } from './constants.js';
 
 const COLORS = Object.keys(COLOR_PALETTE);
 const RUSH_MIN_LENGTH = 4; // pieces; below this, isRushing is false even though raw counting continues
-// Garbage falls at a constant rate regardless of game speed. 0.2667s/row per the user's own
-// figure (corrected from an initial 0.25s/row estimate used when this was first built). Exported
-// so a view wanting to animate a wave's SALT contribution "counting up" in sync with the actual
-// fall (rather than jumping straight to the new cumulative total) can time that animation against
-// the same constant this class accumulates with, instead of hardcoding a second copy of it.
-export const SALT_SECONDS_PER_ROW = 0.2667;
+// Garbage falls at a constant rate regardless of game speed. 0.25s/row, per the user -- briefly
+// changed to 0.2667 on a correction that turned out to be wrong and reverted back to the
+// original 0.25 figure. Exported so a view wanting to animate a wave's SALT contribution
+// "counting up" in sync with the actual fall (rather than jumping straight to the new cumulative
+// total) can time that animation against the same constant this class accumulates with, instead
+// of hardcoding a second copy of it.
+export const SALT_SECONDS_PER_ROW = 0.25;
 
 export default class LiveMetrics extends EventTarget {
 	#carryAcrossLevels;

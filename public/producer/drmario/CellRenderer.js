@@ -80,9 +80,9 @@ for (const color of ['red', 'blue', 'yellow']) {
 
 // A flat, shared toggle -- not tied to any one cell's own OCR-reported frame. See this file's
 // header comment for why. intervalMs is a plausible approximation, not a measured NES timing
-// value (none exists in this codebase) -- purely cosmetic, adjust freely. 250ms (doubled from an
-// initial 500ms guess) per direct feedback that the first value read as too slow.
-export function currentVirusFrame(intervalMs = 250) {
+// value (none exists in this codebase) -- purely cosmetic, adjust freely. Doubled twice from an
+// initial 500ms guess (500 -> 250 -> 125ms) per direct feedback that it kept reading as too slow.
+export function currentVirusFrame(intervalMs = 125) {
 	return Math.floor(Date.now() / intervalMs) % 2;
 }
 
