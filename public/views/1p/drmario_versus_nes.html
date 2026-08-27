@@ -51,11 +51,8 @@
 				border: 2px solid #666;
 			}
 
-			.next-pill-cell {
-				display: inline-block;
-				width: 24px;
-				height: 24px;
-				margin-right: 2px;
+			.next-pill-canvas {
+				background: #000;
 				border: 1px solid #666;
 				vertical-align: middle;
 			}
@@ -103,7 +100,7 @@
 				<h2 id="player-name-1p">Player 1</h2>
 				<p class="round-state" id="round-1p"></p>
 				<canvas class="board-canvas" id="board-1p"></canvas>
-				<p>Next: <span id="next-1p"></span></p>
+				<p>Next: <canvas class="next-pill-canvas" id="next-1p"></canvas></p>
 				<p class="stats" id="stats-1p"></p>
 				<p class="stats" id="run-stats-1p"></p>
 				<p class="stats" id="garbage-stats-1p"></p>
@@ -113,7 +110,7 @@
 				<h2 id="player-name-2p">Player 2</h2>
 				<p class="round-state" id="round-2p"></p>
 				<canvas class="board-canvas" id="board-2p"></canvas>
-				<p>Next: <span id="next-2p"></span></p>
+				<p>Next: <canvas class="next-pill-canvas" id="next-2p"></canvas></p>
 				<p class="stats" id="stats-2p"></p>
 				<p class="stats" id="run-stats-2p"></p>
 				<p class="stats" id="garbage-stats-2p"></p>
@@ -373,20 +370,11 @@
 				renderStats('2p', e.detail)
 			);
 
-			function colorFor(cell) {
-				if (!cell || cell.type === 'empty') return '#000';
-				if (cell.type === 'unknown') return '#888';
-
-				const rgb = COLOR_PALETTE[cell.color];
-				return rgb ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : '#f0f';
-			}
-
-			// The bottle grid itself renders real NES sprite art via CellRenderer.js (pill
-			// halves/singles, animated viruses) instead of flat colored squares -- see
-			// CLAUDE.md's notes on this layout for why this exists as a separate file rather than
-			// replacing drmario_versus.html in place. Everything else on this page (next-pill
-			// preview, stats text, round-state banner) intentionally still uses the plain
-			// colorFor()-based rendering below -- explicitly out of scope for this pass.
+			// The bottle grid and next-pill preview both render real NES sprite art via
+			// CellRenderer.js (pill halves/singles, animated viruses) instead of flat colored
+			// squares -- see CLAUDE.md's notes on this layout for why this exists as a separate
+			// file rather than replacing drmario_versus.html in place. Stats text and the round-
+			// state banner intentionally still use plain text/CSS -- explicitly out of scope.
 			const CELL_PX = 24; // 3x the native 8px NES tile -- a clean integer scale
 
 			function renderBoard(canvas, board) {
@@ -410,17 +398,20 @@
 				});
 			}
 
-			function renderNextPill(container, nextPill) {
-				container.innerHTML = '';
+			// A next-pill preview is always a plain horizontal pill -- BoardOCR.identifyNextPill()
+			// already returns nextPill.left/right as full cell-shaped objects ({type: 'pill',
+			// shape: 'left'/'right', color}), so they can go straight into drawCell() with no
+			// translation, the same as a real board cell. virusFrame is passed along purely for a
+			// consistent drawCell() call shape -- a pill never uses it.
+			function renderNextPill(canvas, nextPill) {
+				const ctx = canvas.getContext('2d');
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 				if (!nextPill) return;
 
-				['left', 'right'].forEach(slot => {
-					const span = document.createElement('span');
-					span.className = 'next-pill-cell';
-					span.style.background = colorFor(nextPill[slot]);
-					container.appendChild(span);
-				});
+				const virusFrame = currentVirusFrame();
+				drawCell(ctx, 0, 0, CELL_PX, nextPill.left, virusFrame);
+				drawCell(ctx, CELL_PX, 0, CELL_PX, nextPill.right, virusFrame);
 			}
 
 			function renderFrame(data) {
@@ -456,12 +447,17 @@
 				trackers.player2.processFrame(data.player2);
 			}
 
-			// Board canvases are sized here (not via HTML width/height attributes) so COLS/ROWS/
-			// CELL_PX all come from one place.
+			// Board/next-pill canvases are sized here (not via HTML width/height attributes) so
+			// COLS/ROWS/CELL_PX all come from one place.
 			['board-1p', 'board-2p'].forEach(id => {
 				const canvas = document.getElementById(id);
 				canvas.width = COLS * CELL_PX;
 				canvas.height = ROWS * CELL_PX;
+			});
+			['next-1p', 'next-2p'].forEach(id => {
+				const canvas = document.getElementById(id);
+				canvas.width = 2 * CELL_PX;
+				canvas.height = CELL_PX;
 			});
 
 			const API = {

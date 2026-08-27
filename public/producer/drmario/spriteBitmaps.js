@@ -8,15 +8,20 @@
 // and piece_clear.png, then sampled the raw pixel grid of every cell it confidently identified,
 // rather than hand-transcribing anything.
 //
-// 10 of the 15 (shape, color) pill combinations were found directly in those fixtures; the
-// remaining 4 (marked "composed: true" below, with their donor noted) were
-// composed instead: pill shape is confirmed color-independent (see templates.js), and each pill
-// color empirically turned out to use exactly 2 fill tones -- its own COLOR_PALETTE base color,
-// plus one secondary "highlight" tone (red and blue both highlight with yellow's own base color;
-// yellow highlights with blue's own base color -- see PILL_TONES below, also empirically
-// derived). A missing (shape, color) combo is built by taking a directly-sampled instance of the
-// same shape in a different color and substituting that donor's own 2 tones for the target
-// color's 2 tones, pixel for pixel -- composed: ["blue bottom <- red bottom","yellow right <- red right","yellow bottom <- red bottom","yellow single <- red single"].
+// 10 of the 15 (shape, color) pill combinations were found directly in those fixtures. Two of
+// those 10 -- blue left/right -- were deliberately discarded despite being found: both came from
+// level00_frameA.png's FALLING-piece capture rather than the landed level00_pill_shapes.png
+// fixture everything else used, and that particular instance renders 1px lower than the
+// canonical landed alignment (confirmed both by direct pixel inspection and live after wiring
+// this into a real view -- exactly the per-instance jitter templates.js's own header comment
+// already warns about). So the remaining 6 (marked "composed: true" below,
+// with their donor noted) were composed instead: pill shape is confirmed color-independent (see
+// templates.js), and each pill color empirically turned out to use exactly 2 fill tones -- its
+// own COLOR_PALETTE base color, plus one secondary "highlight" tone (red and blue both highlight
+// with yellow's own base color; yellow highlights with blue's own base color -- see PILL_TONES
+// below, also empirically derived). A missing (shape, color) combo is built by taking a directly-
+// sampled instance of the same shape in a different color and substituting that donor's own 2
+// tones for the target color's 2 tones, pixel for pixel -- composed: ["blue left <- red left","blue right <- red right","blue bottom <- red bottom","yellow right <- red right","yellow bottom <- red bottom","yellow single <- red single"].
 //
 // The 'clearing' ring (a cell mid-match-clear -- see templates.js's CLEARING_TEMPLATE) is a
 // single flat tone with no shading (confirmed: only 1 distinct color across its lit pixels), so
@@ -26,7 +31,7 @@
 //
 // Every bitmap is the full native 8x8 cell (not trimmed to content), so on-screen alignment
 // matches how the tile actually sits -- see templates.js's own note that real content can render
-// flush or shifted by 1px depending on instance. `null` = transparent/background; otherwise an
+// flush or shifted by 1px depending on instance. null = transparent/background; otherwise an
 // [r, g, b] triplet.
 
 export const PILL_TONES = {
@@ -418,153 +423,153 @@ export const PILL_SPRITES = {
 		],
 	},
 	blue: {
-		// level00_frameA.png col3 row4
+		// composed from red left (level00_pill_shapes.png col0 row15)
 		left: [
+			[
+				null,
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+			],
+			[
+				[100, 176, 254],
+				[100, 176, 254],
+				[189, 191, 0],
+				[189, 191, 0],
+				[189, 191, 0],
+				[189, 191, 0],
+				[100, 176, 254],
+				null,
+			],
+			[
+				[100, 176, 254],
+				[189, 191, 0],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+			],
+			[
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+			],
+			[
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+			],
+			[
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+			],
+			[
+				null,
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+			],
 			[null, null, null, null, null, null, null, null],
-			[
-				null,
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-			],
-			[
-				[100, 176, 254],
-				[100, 176, 254],
-				[189, 191, 0],
-				[189, 191, 0],
-				[189, 191, 0],
-				[189, 191, 0],
-				[100, 176, 254],
-				null,
-			],
-			[
-				[100, 176, 254],
-				[189, 191, 0],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-			],
-			[
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-			],
-			[
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-			],
-			[
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-			],
-			[
-				null,
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-			],
 		],
-		// level00_frameA.png col4 row4
+		// composed from red right (level00_pill_shapes.png col7 row6)
 		right: [
+			[
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+				null,
+			],
+			[
+				[189, 191, 0],
+				[189, 191, 0],
+				[189, 191, 0],
+				[189, 191, 0],
+				[189, 191, 0],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+			],
+			[
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+			],
+			[
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+			],
+			[
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+			],
+			[
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+			],
+			[
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				[100, 176, 254],
+				null,
+				null,
+			],
 			[null, null, null, null, null, null, null, null],
-			[
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-				null,
-			],
-			[
-				[189, 191, 0],
-				[189, 191, 0],
-				[189, 191, 0],
-				[189, 191, 0],
-				[189, 191, 0],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-			],
-			[
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-			],
-			[
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-			],
-			[
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-			],
-			[
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-			],
-			[
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				[100, 176, 254],
-				null,
-				null,
-			],
 		],
 		// level00_pill_shapes.png col7 row4
 		top: [
