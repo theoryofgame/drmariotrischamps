@@ -646,6 +646,33 @@
 			const lastOutcome = { '1p': null, '2p': null };
 			const latestSnapshot = { '1p': null, '2p': null };
 
+			// The character/virus celebration pose that plays right as a round ends isn't OCR-
+			// matched at all (see CLAUDE.md's "Known gaps") and can already be on screen -- and
+			// obscuring real cells near the top of the bottle -- for a frame or two before result
+			// actually leaves 'playing' (reported live, with a screenshot showing garbled/
+			// undetected cells in the frozen board). Freezing on literally the last frame drawn
+			// risks freezing on that already-obscured one. A short rolling history of recent board
+			// reads (per player) lets the freeze step back to the frame just before it instead.
+			const BOARD_HISTORY_SIZE = 2;
+			const boardHistory = { '1p': [], '2p': [] };
+
+			function recordBoardHistory(playerKey, board) {
+				const history = boardHistory[playerKey];
+				history.push(board);
+				if (history.length > BOARD_HISTORY_SIZE) history.shift();
+			}
+
+			// history's last entry is the very frame that was just drawn (possibly already
+			// obscured); prefer the one before it if there is one.
+			function freezeOnEarlierBoard(playerKey) {
+				const history = boardHistory[playerKey];
+				const board =
+					history.length > 1 ? history[history.length - 2] : history[0];
+				if (board) {
+					renderBoard(document.getElementById(`board-${playerKey}`), board);
+				}
+			}
+
 			// The match itself (not just the round) is decided the instant either player reaches
 			// 3 crowns -- confirmed live: there's a brief, spurious transition between the final
 			// round's own end screen and the shared match-level GAME OVER screen where the OCR
@@ -669,21 +696,25 @@
 			trackers.player1.addEventListener('round_end', e => {
 				roundEnded['1p'] = true;
 				lastOutcome['1p'] = e.detail.outcome;
+				freezeOnEarlierBoard('1p');
 				updateFreezeOverlay('1p');
 			});
 			trackers.player1.addEventListener('round_start', () => {
 				if (matchOver) return;
 				roundEnded['1p'] = false;
+				boardHistory['1p'] = [];
 				updateFreezeOverlay('1p');
 			});
 			trackers.player2.addEventListener('round_end', e => {
 				roundEnded['2p'] = true;
 				lastOutcome['2p'] = e.detail.outcome;
+				freezeOnEarlierBoard('2p');
 				updateFreezeOverlay('2p');
 			});
 			trackers.player2.addEventListener('round_start', () => {
 				if (matchOver) return;
 				roundEnded['2p'] = false;
+				boardHistory['2p'] = [];
 				updateFreezeOverlay('2p');
 			});
 
@@ -820,11 +851,15 @@
 				// overlay is layered on top of. Also guarded on the board actually being present,
 				// so an ordinary hasBottle:false frame (pause/menu, board: null, round not
 				// actually over) doesn't clear the canvas via renderBoard's own null-board check.
+				// Also feeds boardHistory (see freezeOnEarlierBoard) so the eventual freeze can
+				// step back a frame from whatever's drawn here.
 				if (!roundEnded['1p'] && data.player1.board) {
 					renderBoard(document.getElementById('board-1p'), data.player1.board);
+					recordBoardHistory('1p', data.player1.board);
 				}
 				if (!roundEnded['2p'] && data.player2.board) {
 					renderBoard(document.getElementById('board-2p'), data.player2.board);
+					recordBoardHistory('2p', data.player2.board);
 				}
 
 				renderNextPill(
