@@ -37,10 +37,40 @@
 				background: #e7235a;
 				height: 44px;
 				flex: 0 0 auto;
+			}
+
+			#top-bar {
 				display: flex;
 				align-items: center;
 				justify-content: center;
 				gap: 8px;
+			}
+
+			/* Grid, not a simple centered flex row -- flex centered the row's content as a whole,
+			   so a longer player name on one side visibly shifted the round-name pill off the
+			   bar's true center (reported live). The 1fr side columns are always equal width
+			   regardless of their own content, so the auto-sized center column -- and the round-
+			   name pill inside it -- stays locked to the bar's actual horizontal center. */
+			#bottom-bar {
+				display: grid;
+				grid-template-columns: 1fr auto 1fr;
+				align-items: center;
+				gap: 8px;
+				padding: 0 12px;
+			}
+
+			.bottom-bar-side {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+
+			.bottom-bar-side.left {
+				justify-content: flex-end;
+			}
+
+			.bottom-bar-side.right {
+				justify-content: flex-start;
 			}
 
 			.bar-pill {
@@ -392,18 +422,22 @@
 			</div>
 
 			<div id="bottom-bar">
-				<div class="bar-pill">
-					<p id="player-name-1p">Player 1</p>
-					<span class="crown-circle" id="crown-1p-0"></span>
-					<span class="crown-circle" id="crown-1p-1"></span>
-					<span class="crown-circle" id="crown-1p-2"></span>
+				<div class="bottom-bar-side left">
+					<div class="bar-pill">
+						<p id="player-name-1p">Player 1</p>
+						<span class="crown-circle" id="crown-1p-0"></span>
+						<span class="crown-circle" id="crown-1p-1"></span>
+						<span class="crown-circle" id="crown-1p-2"></span>
+					</div>
 				</div>
 				<div class="bar-pill"><p id="round-name"></p></div>
-				<div class="bar-pill">
-					<span class="crown-circle" id="crown-2p-0"></span>
-					<span class="crown-circle" id="crown-2p-1"></span>
-					<span class="crown-circle" id="crown-2p-2"></span>
-					<p id="player-name-2p">Player 2</p>
+				<div class="bottom-bar-side right">
+					<div class="bar-pill">
+						<span class="crown-circle" id="crown-2p-0"></span>
+						<span class="crown-circle" id="crown-2p-1"></span>
+						<span class="crown-circle" id="crown-2p-2"></span>
+						<p id="player-name-2p">Player 2</p>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -756,11 +790,17 @@
 				);
 			}
 
+			// Fills outward from the round-name text at the center, not always left to right.
+			// Player 1's crowns sit to the LEFT of it, so index 2 (last in DOM order, closest to
+			// center) fills first as wins accumulate; player 2's sit to the RIGHT, so index 0
+			// (first in DOM order, closest to center) fills first -- already the natural order for
+			// player 2, only player 1's needs mirroring.
 			function renderCrowns(playerKey, wins) {
 				for (let i = 0; i < 3; i++) {
+					const filled = playerKey === '1p' ? i >= 3 - wins : i < wins;
 					document
 						.getElementById(`crown-${playerKey}-${i}`)
-						.classList.toggle('filled', i < wins);
+						.classList.toggle('filled', filled);
 				}
 			}
 
