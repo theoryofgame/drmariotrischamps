@@ -123,6 +123,7 @@
 			import LiveMetrics, {
 				SALT_SECONDS_PER_ROW,
 			} from '/producer/drmario/LiveMetrics.js';
+			import { calculateInternalSpeed } from '/producer/drmario/InternalSpeed.js';
 			import {
 				drawCell,
 				currentVirusFrame,
@@ -165,6 +166,24 @@
 			trackers.player2.addEventListener('round_start', event =>
 				trackers.player1.syncRoundStart({ roundId: event.detail.roundId })
 			);
+
+			// The displayed LOW/MED/HI speed isn't the game's real internal fall-speed -- see
+			// InternalSpeed.js. That calculation needs a running count of pills entered since
+			// each player's current round started -- independent per player, same as everything
+			// else here, since each player's own level/speed ramp is tracked separately.
+			const piecesEnteredThisRound = { player1: 0, player2: 0 };
+			trackers.player1.addEventListener('round_start', () => {
+				piecesEnteredThisRound.player1 = 0;
+			});
+			trackers.player1.addEventListener('piece_entered', () => {
+				piecesEnteredThisRound.player1++;
+			});
+			trackers.player2.addEventListener('round_start', () => {
+				piecesEnteredThisRound.player2 = 0;
+			});
+			trackers.player2.addEventListener('piece_entered', () => {
+				piecesEnteredThisRound.player2++;
+			});
 
 			// Round timer: versus's round boundary is shared (see the cross-wiring above), so both
 			// trackers' round_start/round_end fire for the same roundId within a frame or two of
@@ -436,10 +455,18 @@
 					data.player2.nextPill
 				);
 
+				const internalSpeed1p = calculateInternalSpeed(
+					data.player1.speed,
+					piecesEnteredThisRound.player1
+				);
+				const internalSpeed2p = calculateInternalSpeed(
+					data.player2.speed,
+					piecesEnteredThisRound.player2
+				);
 				document.getElementById('stats-1p').textContent =
-					`Level ${data.player1.level ?? '?'} / Speed ${data.player1.speed ?? '?'} / Virus ${data.player1.virus ?? '?'}`;
+					`Level ${data.player1.level ?? '?'} / Speed ${internalSpeed1p ?? '?'} / Virus ${data.player1.virus ?? '?'}`;
 				document.getElementById('stats-2p').textContent =
-					`Level ${data.player2.level ?? '?'} / Speed ${data.player2.speed ?? '?'} / Virus ${data.player2.virus ?? '?'}`;
+					`Level ${data.player2.level ?? '?'} / Speed ${internalSpeed2p ?? '?'} / Virus ${data.player2.virus ?? '?'}`;
 				document.getElementById('crowns').textContent =
 					`P1 ${data.crowns.player1.wins} -- P2 ${data.crowns.player2.wins}`;
 

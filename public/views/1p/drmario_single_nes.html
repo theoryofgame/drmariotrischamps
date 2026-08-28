@@ -91,6 +91,7 @@
 			import Connection from '/js/connection.js';
 			import RoundTracker from '/producer/drmario/RoundTracker.js';
 			import LiveMetrics from '/producer/drmario/LiveMetrics.js';
+			import { calculateInternalSpeed } from '/producer/drmario/InternalSpeed.js';
 			import {
 				drawCell,
 				currentVirusFrame,
@@ -113,6 +114,19 @@
 			// Single-player has no shared round boundary to sync across bottles the way versus
 			// does (see RoundTracker.js's header comment) -- just the one instance.
 			const tracker = new RoundTracker();
+
+			// The displayed LOW/MED/HI speed isn't the game's real internal fall-speed -- see
+			// InternalSpeed.js. That calculation needs a running count of pills entered since the
+			// current round started, which (unlike LiveMetrics' own piece count) always resets on
+			// round_start regardless of carryAcrossLevels: the real game's own speed ramp genuinely
+			// restarts every level, it isn't a "run" concept.
+			let piecesEnteredThisRound = 0;
+			tracker.addEventListener('round_start', () => {
+				piecesEnteredThisRound = 0;
+			});
+			tracker.addEventListener('piece_entered', () => {
+				piecesEnteredThisRound++;
+			});
 
 			// carryAcrossLevels: single-player's round boundary fires on every level (a
 			// stage_clear just advances to a harder one, same playthrough) -- see LiveMetrics.js's
@@ -211,8 +225,12 @@
 				renderBoard(document.getElementById('board-sp'), data.board);
 				renderNextPill(document.getElementById('next-sp'), data.nextPill);
 
+				const internalSpeed = calculateInternalSpeed(
+					data.speed,
+					piecesEnteredThisRound
+				);
 				document.getElementById('stats-sp').textContent =
-					`Top ${data.top ?? '?'} / Score ${data.score ?? '?'} / Level ${data.level ?? '?'} / Speed ${data.speed ?? '?'} / Virus ${data.virus ?? '?'}`;
+					`Top ${data.top ?? '?'} / Score ${data.score ?? '?'} / Level ${data.level ?? '?'} / Speed ${internalSpeed ?? '?'} / Virus ${data.virus ?? '?'}`;
 
 				tracker.processFrame(data);
 			}
