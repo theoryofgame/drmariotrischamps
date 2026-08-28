@@ -612,12 +612,33 @@
 			const lastOutcome = { '1p': null, '2p': null };
 			const latestSnapshot = { '1p': null, '2p': null };
 
+			// The match itself (not just the round) is decided the instant either player reaches
+			// 3 crowns -- confirmed live: there's a brief, spurious transition between the final
+			// round's own end screen and the shared match-level GAME OVER screen where the OCR
+			// briefly reads the bottle as 'playing' again (almost certainly a screen-wipe/
+			// transition frame misread as an empty board), which fires a bogus round_start.
+			// Without this guard that reset LiveMetrics' stats and dropped the freeze overlay right
+			// when it matters most. Once matchOver is set, both players' freeze/dim + stats recap
+			// are locked in place for good -- round_start can no longer un-freeze them, and their
+			// stats snapshots stop updating, so nothing shown can drift after the match is over.
+			let matchOver = false;
+
+			function checkMatchOver(crowns) {
+				if (
+					!matchOver &&
+					(crowns.player1.wins >= 3 || crowns.player2.wins >= 3)
+				) {
+					matchOver = true;
+				}
+			}
+
 			trackers.player1.addEventListener('round_end', e => {
 				roundEnded['1p'] = true;
 				lastOutcome['1p'] = e.detail.outcome;
 				updateFreezeOverlay('1p');
 			});
 			trackers.player1.addEventListener('round_start', () => {
+				if (matchOver) return;
 				roundEnded['1p'] = false;
 				updateFreezeOverlay('1p');
 			});
@@ -627,6 +648,7 @@
 				updateFreezeOverlay('2p');
 			});
 			trackers.player2.addEventListener('round_start', () => {
+				if (matchOver) return;
 				roundEnded['2p'] = false;
 				updateFreezeOverlay('2p');
 			});
@@ -669,6 +691,7 @@
 			}
 
 			function renderStats(playerKey, s) {
+				if (matchOver) return; // freeze the snapshot exactly as it was at match end
 				latestSnapshot[playerKey] = s;
 				renderSideBox(playerKey, s);
 				updateFreezeOverlay(playerKey);
@@ -790,6 +813,7 @@
 
 				renderCrowns('1p', data.crowns.player1.wins);
 				renderCrowns('2p', data.crowns.player2.wins);
+				checkMatchOver(data.crowns);
 
 				trackers.player1.processFrame(data.player1);
 				trackers.player2.processFrame(data.player2);
