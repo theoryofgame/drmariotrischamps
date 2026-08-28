@@ -35,6 +35,8 @@ const SECRET_STORAGE_KEY = 'drmario_producer_secret';
 const LAYOUT_STORAGE_KEY = 'drmario_producer_layout';
 const PLAYER1_NAME_STORAGE_KEY = 'drmario_producer_player1_name';
 const PLAYER2_NAME_STORAGE_KEY = 'drmario_producer_player2_name';
+const EVENT_NAME_STORAGE_KEY = 'drmario_producer_event_name';
+const ROUND_NAME_STORAGE_KEY = 'drmario_producer_round_name';
 
 function loadFromStorage(key) {
 	try {
@@ -204,6 +206,20 @@ player1NameInput.addEventListener('input', () => {
 });
 player2NameInput.addEventListener('input', () => {
 	saveToStorage(PLAYER2_NAME_STORAGE_KEY, player2NameInput.value);
+});
+
+// Event/round name (versus only) -- same reasoning and wiring as player names above: attached to
+// every outgoing versus frame rather than sent as a one-off message, so a view connecting mid-
+// session still picks up the current values on the very next frame.
+const eventNameInput = document.getElementById('event-name');
+const roundNameInput = document.getElementById('round-name');
+eventNameInput.value = loadFromStorage(EVENT_NAME_STORAGE_KEY) || '';
+roundNameInput.value = loadFromStorage(ROUND_NAME_STORAGE_KEY) || '';
+eventNameInput.addEventListener('input', () => {
+	saveToStorage(EVENT_NAME_STORAGE_KEY, eventNameInput.value);
+});
+roundNameInput.addEventListener('input', () => {
+	saveToStorage(ROUND_NAME_STORAGE_KEY, roundNameInput.value);
 });
 
 let pendingCorner = null;
@@ -463,6 +479,8 @@ function loop() {
 			player1: player1NameInput.value.trim() || 'Player 1',
 			player2: player2NameInput.value.trim() || 'Player 2',
 		};
+		result.eventName = eventNameInput.value.trim();
+		result.roundName = roundNameInput.value.trim();
 	}
 
 	renderResult(result);

@@ -1,0 +1,723 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<style>
+			html,
+			body {
+				padding: 0;
+				margin: 0;
+			}
+
+			* {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				box-sizing: border-box;
+			}
+
+			/* Transparent by design -- this is composited over a live camera feed in OBS, so
+			   nothing here paints the full page. Only the bars/boxes/bottle borders below are
+			   solid; everything else stays see-through. */
+			#stream_bg {
+				position: relative;
+				width: 1280px;
+				height: 720px;
+				overflow: hidden;
+				color: #eee;
+				display: flex;
+				flex-direction: column;
+			}
+
+			/* Both bars: measured directly off the DrMC reference screenshots (see CLAUDE.md) --
+			   a solid magenta/pink band behind black rounded bar(s) holding the actual text. */
+			#top-bar,
+			#bottom-bar {
+				background: #e7235a;
+				height: 44px;
+				flex: 0 0 auto;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 8px;
+			}
+
+			.bar-pill {
+				background: #0a0b0a;
+				border-radius: 999px;
+				padding: 4px 20px;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+
+			.bar-pill p {
+				margin: 0;
+				font-weight: bold;
+				color: #fff;
+				font-size: 18px;
+				white-space: nowrap;
+			}
+
+			#round-timer-pill p {
+				font-size: 14px;
+				color: #ccc;
+			}
+
+			#bottom-bar .bar-pill {
+				padding: 4px 16px;
+			}
+
+			#bottom-bar .bar-pill p {
+				font-size: 16px;
+			}
+
+			.crown-circle {
+				display: inline-block;
+				width: 13px;
+				height: 13px;
+				border-radius: 50%;
+				background: #0a0b0a;
+				border: 1px solid #444;
+				margin: 0 1px;
+			}
+
+			.crown-circle.filled {
+				background: #fae65f;
+				border-color: #fae65f;
+			}
+
+			#playfield {
+				flex: 1 1 auto;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 16px;
+			}
+
+			.side-box {
+				background: #fff;
+				border: 2px solid #64b7d5;
+				border-radius: 4px;
+				padding: 8px 12px;
+				min-width: 90px;
+				text-align: center;
+			}
+
+			.side-box-label {
+				display: block;
+				font-size: 11px;
+				font-weight: bold;
+				color: #555;
+			}
+
+			.side-box-value {
+				display: block;
+				font-size: 16px;
+				font-weight: bold;
+				color: #000;
+				margin-top: 2px;
+			}
+
+			.player-column {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 6px;
+			}
+
+			.top-strip {
+				display: flex;
+				background: #fff;
+				border: 2px solid #64b7d5;
+				border-radius: 4px;
+				overflow: hidden;
+			}
+
+			.strip-box {
+				padding: 3px 8px;
+				display: flex;
+				align-items: center;
+				gap: 4px;
+				border-right: 1px solid #64b7d5;
+			}
+
+			.strip-box:last-child {
+				border-right: none;
+			}
+
+			.strip-label {
+				font-weight: bold;
+				font-size: 12px;
+				color: #000;
+			}
+
+			.strip-value {
+				font-weight: bold;
+				font-size: 15px;
+				color: #000;
+			}
+
+			.next-pill-canvas {
+				background: #000;
+				display: block;
+			}
+
+			.strip-box.next-pill-box {
+				padding: 0;
+			}
+
+			/* Bottle border: measured as a genuine 3-stripe frame (red, cyan, thin gold) around
+			   the black bottle interior -- see CLAUDE.md for the sampled RGB values. */
+			.bottle-border-red {
+				border: 3px solid #ee3434;
+				display: inline-block;
+				line-height: 0;
+			}
+
+			.bottle-border-cyan {
+				border: 3px solid #64b7d5;
+				display: inline-block;
+				line-height: 0;
+			}
+
+			.bottle-border-gold {
+				border: 2px solid #ebb423;
+				display: inline-block;
+				line-height: 0;
+			}
+
+			.board-wrap {
+				position: relative;
+				display: inline-block;
+				line-height: 0;
+			}
+
+			.board-canvas {
+				display: block;
+				background: #000;
+			}
+
+			.freeze-overlay {
+				position: absolute;
+				inset: 0;
+				background: rgba(15, 15, 15, 0.8);
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				gap: 8px;
+				opacity: 0;
+				pointer-events: none;
+				transition: opacity 0.4s;
+				text-align: center;
+				padding: 12px;
+			}
+
+			.freeze-overlay.visible {
+				opacity: 1;
+			}
+
+			.freeze-outcome {
+				margin: 0;
+				font-weight: bold;
+				font-size: 22px;
+				color: #ff0;
+			}
+
+			.freeze-stats {
+				margin: 0;
+				font-size: 13px;
+				color: #ddd;
+			}
+
+			.freeze-logo {
+				max-width: 70%;
+				max-height: 40%;
+			}
+
+			.rush {
+				color: #f80;
+				font-weight: bold;
+			}
+
+			.drought {
+				font-weight: bold;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="stream_bg">
+			<div id="top-bar">
+				<div class="bar-pill" id="event-name-pill"><p id="event-name"></p></div>
+				<div class="bar-pill" id="round-timer-pill">
+					<p id="round-timer"></p>
+				</div>
+			</div>
+
+			<div id="playfield">
+				<div class="side-box" id="side-box-1p">
+					<span class="side-box-label">COMBO/MIN</span>
+					<span class="side-box-value">0.0</span>
+				</div>
+
+				<div class="player-column">
+					<div class="top-strip">
+						<div class="strip-box">
+							<span class="strip-label">VIR</span>
+							<span class="strip-value" id="vir-1p">?</span>
+						</div>
+						<div class="strip-box next-pill-box">
+							<canvas class="next-pill-canvas" id="next-1p"></canvas>
+						</div>
+						<div class="strip-box">
+							<span class="strip-label">SPD</span>
+							<span class="strip-value" id="spd-1p">?</span>
+						</div>
+					</div>
+					<div class="bottle-border-red">
+						<div class="bottle-border-cyan">
+							<div class="bottle-border-gold">
+								<div class="board-wrap">
+									<canvas class="board-canvas" id="board-1p"></canvas>
+									<div class="freeze-overlay" id="freeze-1p">
+										<p class="freeze-outcome" id="freeze-outcome-1p"></p>
+										<p class="freeze-stats" id="freeze-stats-1p"></p>
+										<img
+											class="freeze-logo"
+											id="freeze-logo-1p"
+											src="/producer/drmario/drmc_logo.png"
+											alt=""
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="player-column">
+					<div class="top-strip">
+						<div class="strip-box">
+							<span class="strip-label">VIR</span>
+							<span class="strip-value" id="vir-2p">?</span>
+						</div>
+						<div class="strip-box next-pill-box">
+							<canvas class="next-pill-canvas" id="next-2p"></canvas>
+						</div>
+						<div class="strip-box">
+							<span class="strip-label">SPD</span>
+							<span class="strip-value" id="spd-2p">?</span>
+						</div>
+					</div>
+					<div class="bottle-border-red">
+						<div class="bottle-border-cyan">
+							<div class="bottle-border-gold">
+								<div class="board-wrap">
+									<canvas class="board-canvas" id="board-2p"></canvas>
+									<div class="freeze-overlay" id="freeze-2p">
+										<p class="freeze-outcome" id="freeze-outcome-2p"></p>
+										<p class="freeze-stats" id="freeze-stats-2p"></p>
+										<img
+											class="freeze-logo"
+											id="freeze-logo-2p"
+											src="/producer/drmario/drmc_logo.png"
+											alt=""
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="side-box" id="side-box-2p">
+					<span class="side-box-label">COMBO/MIN</span>
+					<span class="side-box-value">0.0</span>
+				</div>
+			</div>
+
+			<div id="bottom-bar">
+				<div class="bar-pill">
+					<p id="player-name-1p">Player 1</p>
+					<span class="crown-circle" id="crown-1p-0"></span>
+					<span class="crown-circle" id="crown-1p-1"></span>
+					<span class="crown-circle" id="crown-1p-2"></span>
+				</div>
+				<div class="bar-pill"><p id="round-name"></p></div>
+				<div class="bar-pill">
+					<span class="crown-circle" id="crown-2p-0"></span>
+					<span class="crown-circle" id="crown-2p-1"></span>
+					<span class="crown-circle" id="crown-2p-2"></span>
+					<p id="player-name-2p">Player 2</p>
+				</div>
+			</div>
+		</div>
+
+		<script type="module">
+			import Connection from '/js/connection.js';
+			import RoundTracker from '/producer/drmario/RoundTracker.js';
+			import LiveMetrics from '/producer/drmario/LiveMetrics.js';
+			import { calculateInternalSpeed } from '/producer/drmario/InternalSpeed.js';
+			import {
+				drawCell,
+				currentVirusFrame,
+			} from '/producer/drmario/CellRenderer.js';
+			import {
+				COLOR_PALETTE,
+				COLS,
+				ROWS,
+			} from '/producer/drmario/constants.js';
+
+			// The Dr Mario producer/view WS paths live in their own namespace, separate from
+			// Tetris's -- so unlike every Tetris layout, this page can't just rely on
+			// Connection()'s "derive the ws:// URL from location.pathname" convenience. Build the
+			// URL explicitly from the same path segments instead -- see drmario_versus.html's
+			// comment for the full reasoning.
+			const [, , layout, secret] = location.pathname.split('/');
+			const wsProtocol = location.protocol.match(/^https/i) ? 'wss:' : 'ws:';
+			const connection = new Connection(
+				`${wsProtocol}//${location.host}/ws/view/drmario/${layout}/${secret}`
+			);
+
+			// A missing logo asset (not yet provided) just fails to load quietly -- hide the
+			// element rather than showing a broken-image icon over the freeze overlay.
+			['freeze-logo-1p', 'freeze-logo-2p'].forEach(id => {
+				const img = document.getElementById(id);
+				img.addEventListener('error', () => {
+					img.style.display = 'none';
+				});
+			});
+
+			const trackers = {
+				player1: new RoundTracker(),
+				player2: new RoundTracker(),
+			};
+
+			// Same shared-round-boundary wiring as the producer's own operator-facing trackers
+			// (see producer.js) -- see RoundTracker.js's header comment for why both endRound()
+			// and syncRoundStart() are needed, not just one.
+			trackers.player1.addEventListener('round_end', event =>
+				trackers.player2.endRound(`opponent_${event.detail.outcome}`)
+			);
+			trackers.player2.addEventListener('round_end', event =>
+				trackers.player1.endRound(`opponent_${event.detail.outcome}`)
+			);
+			trackers.player1.addEventListener('round_start', event =>
+				trackers.player2.syncRoundStart({ roundId: event.detail.roundId })
+			);
+			trackers.player2.addEventListener('round_start', event =>
+				trackers.player1.syncRoundStart({ roundId: event.detail.roundId })
+			);
+
+			// The displayed LOW/MED/HI speed isn't the game's real internal fall-speed -- see
+			// InternalSpeed.js. That calculation needs a running count of pills entered since
+			// each player's current round started -- independent per player, same as everything
+			// else here, since each player's own level/speed ramp is tracked separately.
+			const piecesEnteredThisRound = { player1: 0, player2: 0 };
+			trackers.player1.addEventListener('round_start', () => {
+				piecesEnteredThisRound.player1 = 0;
+			});
+			trackers.player1.addEventListener('piece_entered', () => {
+				piecesEnteredThisRound.player1++;
+			});
+			trackers.player2.addEventListener('round_start', () => {
+				piecesEnteredThisRound.player2 = 0;
+			});
+			trackers.player2.addEventListener('piece_entered', () => {
+				piecesEnteredThisRound.player2++;
+			});
+
+			// Round timer: versus's round boundary is shared (see the cross-wiring above), so both
+			// trackers' round_start/round_end fire for the same roundId within a frame or two of
+			// each other -- the roundId dedup below just means "first one wins" rather than double-
+			// resetting/re-freezing on the second tracker's own copy of the same transition. Freezes
+			// at whatever it last showed once a round ends, rather than blanking, so the final split
+			// stays readable until the next round_start resets it.
+			const roundTimerEl = document.getElementById('round-timer');
+			let roundStartTime = null;
+			let roundActive = false;
+			let currentRoundId = null;
+
+			function handleRoundStart(detail) {
+				if (roundActive && detail.roundId === currentRoundId) return;
+				currentRoundId = detail.roundId;
+				roundStartTime = Date.now();
+				roundActive = true;
+				roundTimerEl.textContent = '0:00';
+			}
+
+			function handleRoundEnd() {
+				roundActive = false;
+			}
+
+			trackers.player1.addEventListener('round_start', e =>
+				handleRoundStart(e.detail)
+			);
+			trackers.player2.addEventListener('round_start', e =>
+				handleRoundStart(e.detail)
+			);
+			trackers.player1.addEventListener('round_end', handleRoundEnd);
+			trackers.player2.addEventListener('round_end', handleRoundEnd);
+
+			setInterval(() => {
+				if (!roundActive) return;
+				const totalSeconds = Math.floor((Date.now() - roundStartTime) / 1000);
+				const m = Math.floor(totalSeconds / 60);
+				const s = totalSeconds % 60;
+				roundTimerEl.textContent = `${m}:${String(s).padStart(2, '0')}`;
+			}, 250);
+
+			// carryAcrossLevels defaults to false (versus's simpler per-round reset -- see
+			// LiveMetrics.js's header comment; versus has no "advance to a harder level, same
+			// run" concept the way single-player does).
+			const stats = {
+				player1: new LiveMetrics(trackers.player1),
+				player2: new LiveMetrics(trackers.player2),
+			};
+
+			// Garbage a wave sent to the OPPONENT's bottle is credited to the SENDER's own stats
+			// -- same cross-player coordination pattern as endRound()/syncRoundStart() above, just
+			// on garbage_entered instead of round_start/round_end. Unlike drmario_versus.html /
+			// _nes.html, this layout never shows SALT live during play (only in the freeze recap
+			// once a round ends -- see updateFreezeOverlay), so there's no "counts up in sync with
+			// the fall" animation here to kick off -- by the time a round could possibly end, any
+			// such animation would already have long finished, making it purely invisible
+			// complexity in this particular layout.
+			function creditGarbageSent(senderKey, event) {
+				const { cells, maxRestRows } = event.detail;
+				stats[senderKey === '1p' ? 'player1' : 'player2'].recordGarbageSent({
+					cellCount: cells.length,
+					maxRestRows,
+				});
+			}
+			trackers.player1.addEventListener('garbage_entered', event =>
+				creditGarbageSent('2p', event)
+			);
+			trackers.player2.addEventListener('garbage_entered', event =>
+				creditGarbageSent('1p', event)
+			);
+
+			// Droughts are only worth calling out once they're notable -- below this, the raw
+			// counts are still tracked (see LiveMetrics.js), just not surfaced here.
+			const DROUGHT_DISPLAY_THRESHOLD = 5;
+
+			function rgbFor(colorName) {
+				const rgb = COLOR_PALETTE[colorName];
+				return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+			}
+
+			// Same selective treatment as rush: silent unless there's something worth flagging. Only
+			// the worst-drought color is shown (of the 3 colors, more than one can cross the
+			// threshold at once if a single color has been spawning repeatedly), colored to match
+			// that color's own pill so it reads at a glance without a label.
+			function droughtStatusHtml(colorDroughts) {
+				const [color, count] = Object.entries(colorDroughts).reduce(
+					(best, cur) => (cur[1] > best[1] ? cur : best)
+				);
+				if (count < DROUGHT_DISPLAY_THRESHOLD) return '';
+				return `<span class="drought" style="color: ${rgbFor(color)}">${color.toUpperCase()} DROUGHT x${count}</span>`;
+			}
+
+			// This layout has no round-state banner above the bottle (the VIR/next/SPD strip
+			// occupies that space instead) -- rush/drought instead surfaces in the side stat box,
+			// swapped in for the combo/min readout it normally shows, same "which one to show"
+			// priority already established elsewhere (rush beats drought, both beat the default).
+			function renderSideBox(playerKey, s) {
+				const el = document.getElementById(`side-box-${playerKey}`);
+				if (s.isRushing) {
+					el.innerHTML = `<span class="side-box-label rush">RUSH</span><span class="side-box-value rush">x${s.rushStreak}</span>`;
+					return;
+				}
+				const drought = droughtStatusHtml(s.colorDroughts);
+				if (drought) {
+					el.innerHTML = `<span class="side-box-label">DROUGHT</span><span class="side-box-value">${drought}</span>`;
+					return;
+				}
+				el.innerHTML = `<span class="side-box-label">COMBO/MIN</span><span class="side-box-value">${s.garbageWavesSentPerMinute.toFixed(1)}</span>`;
+			}
+
+			// Round-end freeze + dim: renderBoard() below is only ever called while result is
+			// 'playing' (see renderFrame), so once a round ends the canvas simply keeps showing
+			// its last-drawn frame with no snapshot/caching code needed -- this overlay just adds
+			// the dim + a stats recap on top of it. Stays hidden for hasBottle:false frames with
+			// no result at all (pause/menu/title outside a round) -- there's nothing meaningful to
+			// recap there, and the board is already frozen visually either way.
+			const latestResult = { '1p': null, '2p': null };
+			const latestSnapshot = { '1p': null, '2p': null };
+
+			function updateFreezeOverlay(playerKey) {
+				const overlayEl = document.getElementById(`freeze-${playerKey}`);
+				const result = latestResult[playerKey];
+				const frozen = result !== null && result !== 'playing';
+				overlayEl.classList.toggle('visible', frozen);
+
+				if (!frozen) return;
+
+				document.getElementById(`freeze-outcome-${playerKey}`).textContent =
+					result.replace('_', ' ').toUpperCase();
+
+				const s = latestSnapshot[playerKey];
+				document.getElementById(`freeze-stats-${playerKey}`).textContent = s
+					? `Combos: ${s.garbageWavesSent} / SALT ${s.saltSeconds.toFixed(1)}s / CUR ${s.averageGarbageWaveSize.toFixed(3)}`
+					: '';
+			}
+
+			function renderStats(playerKey, s) {
+				latestSnapshot[playerKey] = s;
+				renderSideBox(playerKey, s);
+				updateFreezeOverlay(playerKey);
+			}
+
+			stats.player1.addEventListener('stats_updated', e =>
+				renderStats('1p', e.detail)
+			);
+			stats.player2.addEventListener('stats_updated', e =>
+				renderStats('2p', e.detail)
+			);
+
+			// The bottle grid and next-pill preview both render real NES sprite art via
+			// CellRenderer.js (pill halves/singles, animated viruses) instead of flat colored
+			// squares -- see drmario_versus_nes.html, which this layout's chrome is built on top
+			// of.
+			const CELL_PX = 24; // 3x the native 8px NES tile -- a clean integer scale
+			const NEXT_PILL_CELL_PX = 16; // smaller, to fit the slim top strip
+
+			function renderBoard(canvas, board) {
+				const ctx = canvas.getContext('2d');
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+				if (!board) return;
+
+				const virusFrame = currentVirusFrame();
+				board.forEach((row, rowIdx) => {
+					row.forEach((cell, colIdx) => {
+						drawCell(
+							ctx,
+							colIdx * CELL_PX,
+							rowIdx * CELL_PX,
+							CELL_PX,
+							cell,
+							virusFrame
+						);
+					});
+				});
+			}
+
+			// A next-pill preview is always a plain horizontal pill -- BoardOCR.identifyNextPill()
+			// already returns nextPill.left/right as full cell-shaped objects, so they can go
+			// straight into drawCell() with no translation, same as a real board cell.
+			function renderNextPill(canvas, nextPill) {
+				const ctx = canvas.getContext('2d');
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+				if (!nextPill) return;
+
+				const virusFrame = currentVirusFrame();
+				drawCell(ctx, 0, 0, NEXT_PILL_CELL_PX, nextPill.left, virusFrame);
+				drawCell(
+					ctx,
+					NEXT_PILL_CELL_PX,
+					0,
+					NEXT_PILL_CELL_PX,
+					nextPill.right,
+					virusFrame
+				);
+			}
+
+			function renderCrowns(playerKey, wins) {
+				for (let i = 0; i < 3; i++) {
+					document
+						.getElementById(`crown-${playerKey}-${i}`)
+						.classList.toggle('filled', i < wins);
+				}
+			}
+
+			function renderFrame(data) {
+				document.getElementById('event-name').textContent =
+					data.eventName ?? '';
+				document.getElementById('round-name').textContent =
+					data.roundName ?? '';
+				document.getElementById('player-name-1p').textContent =
+					data.playerNames?.player1 ?? 'Player 1';
+				document.getElementById('player-name-2p').textContent =
+					data.playerNames?.player2 ?? 'Player 2';
+
+				latestResult['1p'] = data.player1.result;
+				latestResult['2p'] = data.player2.result;
+				updateFreezeOverlay('1p');
+				updateFreezeOverlay('2p');
+
+				// Only redraw while the round is actually in progress -- once result leaves
+				// 'playing', skipping this leaves the canvas showing its last-drawn frame, which
+				// is exactly the "freeze" the dim overlay is layered on top of.
+				if (latestResult['1p'] === 'playing') {
+					renderBoard(document.getElementById('board-1p'), data.player1.board);
+				}
+				if (latestResult['2p'] === 'playing') {
+					renderBoard(document.getElementById('board-2p'), data.player2.board);
+				}
+
+				renderNextPill(
+					document.getElementById('next-1p'),
+					data.player1.nextPill
+				);
+				renderNextPill(
+					document.getElementById('next-2p'),
+					data.player2.nextPill
+				);
+
+				const internalSpeed1p = calculateInternalSpeed(
+					data.player1.speed,
+					piecesEnteredThisRound.player1
+				);
+				const internalSpeed2p = calculateInternalSpeed(
+					data.player2.speed,
+					piecesEnteredThisRound.player2
+				);
+				document.getElementById('vir-1p').textContent =
+					data.player1.virus ?? '?';
+				document.getElementById('spd-1p').textContent = internalSpeed1p ?? '?';
+				document.getElementById('vir-2p').textContent =
+					data.player2.virus ?? '?';
+				document.getElementById('spd-2p').textContent = internalSpeed2p ?? '?';
+
+				renderCrowns('1p', data.crowns.player1.wins);
+				renderCrowns('2p', data.crowns.player2.wins);
+
+				trackers.player1.processFrame(data.player1);
+				trackers.player2.processFrame(data.player2);
+			}
+
+			// Board/next-pill canvases are sized here (not via HTML width/height attributes) so
+			// COLS/ROWS/CELL_PX all come from one place.
+			['board-1p', 'board-2p'].forEach(id => {
+				const canvas = document.getElementById(id);
+				canvas.width = COLS * CELL_PX;
+				canvas.height = ROWS * CELL_PX;
+			});
+			['next-1p', 'next-2p'].forEach(id => {
+				const canvas = document.getElementById(id);
+				canvas.width = 2 * NEXT_PILL_CELL_PX;
+				canvas.height = NEXT_PILL_CELL_PX;
+			});
+
+			const API = {
+				frame(_player_idx, data) {
+					if (data.layout === 'versus') renderFrame(data);
+				},
+				message() {}, // noop
+			};
+
+			connection.onMessage = function (frame) {
+				try {
+					const [method, ...args] = frame;
+					API[method]?.apply(API, args);
+				} catch (e) {
+					console.error(e);
+				}
+			};
+		</script>
+	</body>
+</html>

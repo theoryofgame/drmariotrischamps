@@ -69,7 +69,8 @@
 			#broadcast-section input[type='text'] {
 				width: 280px;
 			}
-			#player-names-section input[type='text'] {
+			#player-names-section input[type='text'],
+			#event-info-section input[type='text'] {
 				width: 140px;
 			}
 			.hint {
@@ -140,6 +141,28 @@
 				id="player2-name"
 				type="text"
 				placeholder="Player 2"
+				autocomplete="off"
+			/>
+		</section>
+
+		<section id="event-info-section">
+			<h3>Event info (versus)</h3>
+			<p class="hint">
+				Shown in the DrMC-style versus layout's top/bottom bars. Saved
+				automatically.
+			</p>
+			<label for="event-name">Event name</label>
+			<input
+				id="event-name"
+				type="text"
+				placeholder="DrMC 2025"
+				autocomplete="off"
+			/>
+			<label for="round-name">Round name</label>
+			<input
+				id="round-name"
+				type="text"
+				placeholder="Prelim Rounds"
 				autocomplete="off"
 			/>
 		</section>
