@@ -91,18 +91,25 @@
 			#playfield {
 				flex: 1 1 auto;
 				display: flex;
-				align-items: center;
+				/* flex-end, not center: .player-column's own bottom edge is the bottle's bottom
+				   edge (the top-strip sits above it), so this aligns each .side-box's bottom with
+				   its bottle's bottom rather than floating it mid-height. */
+				align-items: flex-end;
 				justify-content: center;
 				gap: 16px;
 			}
 
+			/* Fixed width, not min-width -- this box's content changes live (combo rate vs. a
+			   drought/rush callout) and must never nudge the bottles/other boxes around while a
+			   round is in progress, so its footprint is locked regardless of content. */
 			.side-box {
 				background: #fff;
 				border: 2px solid #64b7d5;
 				border-radius: 4px;
 				padding: 8px 12px;
-				min-width: 90px;
+				width: 90px;
 				text-align: center;
+				overflow: hidden;
 			}
 
 			.side-box-label {
@@ -226,30 +233,40 @@
 				color: #ff0;
 			}
 
+			/* 3 separate lines, not one long joined string -- at this box's ~190px width, a
+			   single "Combos: X / SALT Ys / CUR Z" string wraps at arbitrary points (mid-number,
+			   mid-label) and reads as an illegible jumble. Explicit per-stat lines wrap
+			   predictably instead. */
 			.freeze-stats {
+				display: flex;
+				flex-direction: column;
+				gap: 3px;
+			}
+
+			.freeze-stats p {
 				margin: 0;
 				font-size: 13px;
 				color: #ddd;
 			}
 
+			/* The provided logo is a JPEG with a solid white square background (no alpha).
+			   mix-blend-mode: multiply was tried first to fake transparency, but multiply
+			   darkens proportionally to whatever's *behind* it -- against this overlay's dark
+			   rgba(15,15,15,0.8) backdrop, that crushed the entire logo (not just its white
+			   background) down toward black, making it invisible rather than blended in.
+			   Simplest robust fix: stop fighting the white background and present it on purpose,
+			   as a small rounded card/badge sitting on top of the dim overlay -- this is correct
+			   regardless of backdrop color, unlike any blend-mode trick. A transparent PNG would
+			   let this go back to a plain borderless logo if one is provided later. */
 			.freeze-logo {
-				max-width: 70%;
-				max-height: 40%;
-				/* The provided logo is a JPEG with a solid white square background (no alpha) --
-				   multiply blends white away against the dark overlay behind it, faking
-				   transparency reasonably well without needing a real transparent PNG. Safe to
-				   leave in place if a transparent PNG replaces this later -- multiply is a no-op
-				   over actually-transparent pixels, it only affects the logo's own opaque ones
-				   (a mild darkening/desaturation against the dark backdrop, not a problem here). */
-				mix-blend-mode: multiply;
+				max-width: 60%;
+				max-height: 35%;
+				border-radius: 10px;
+				box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
 			}
 
 			.rush {
 				color: #f80;
-				font-weight: bold;
-			}
-
-			.drought {
 				font-weight: bold;
 			}
 		</style>
@@ -290,13 +307,17 @@
 									<canvas class="board-canvas" id="board-1p"></canvas>
 									<div class="freeze-overlay" id="freeze-1p">
 										<p class="freeze-outcome" id="freeze-outcome-1p"></p>
-										<p class="freeze-stats" id="freeze-stats-1p"></p>
 										<img
 											class="freeze-logo"
 											id="freeze-logo-1p"
 											src="/producer/drmario/drmc_logo.jpg"
 											alt=""
 										/>
+										<div class="freeze-stats" id="freeze-stats-1p">
+											<p>Combos: <span id="freeze-combos-1p"></span></p>
+											<p>SALT: <span id="freeze-salt-1p"></span>s</p>
+											<p>CUR: <span id="freeze-cur-1p"></span></p>
+										</div>
 									</div>
 								</div>
 							</div>
@@ -325,13 +346,17 @@
 									<canvas class="board-canvas" id="board-2p"></canvas>
 									<div class="freeze-overlay" id="freeze-2p">
 										<p class="freeze-outcome" id="freeze-outcome-2p"></p>
-										<p class="freeze-stats" id="freeze-stats-2p"></p>
 										<img
 											class="freeze-logo"
 											id="freeze-logo-2p"
 											src="/producer/drmario/drmc_logo.jpg"
 											alt=""
 										/>
+										<div class="freeze-stats" id="freeze-stats-2p">
+											<p>Combos: <span id="freeze-combos-2p"></span></p>
+											<p>SALT: <span id="freeze-salt-2p"></span>s</p>
+											<p>CUR: <span id="freeze-cur-2p"></span></p>
+										</div>
 									</div>
 								</div>
 							</div>
@@ -515,16 +540,18 @@
 				return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 			}
 
-			// Same selective treatment as rush: silent unless there's something worth flagging. Only
-			// the worst-drought color is shown (of the 3 colors, more than one can cross the
-			// threshold at once if a single color has been spawning repeatedly), colored to match
-			// that color's own pill so it reads at a glance without a label.
-			function droughtStatusHtml(colorDroughts) {
+			// Same selective treatment as rush: silent unless there's something worth flagging.
+			// Only the worst-drought color is reported (of the 3 colors, more than one can cross
+			// the threshold at once if a single color has been spawning repeatedly). Unlike the
+			// other layouts' full "COLOR DROUGHT xN" phrase, this only reports the color + count --
+			// the side box's width is fixed (see .side-box's own comment) and must never have to
+			// stretch to fit a long phrase, so the label/value themselves are colored instead of
+			// spelling the color name out.
+			function worstDrought(colorDroughts) {
 				const [color, count] = Object.entries(colorDroughts).reduce(
 					(best, cur) => (cur[1] > best[1] ? cur : best)
 				);
-				if (count < DROUGHT_DISPLAY_THRESHOLD) return '';
-				return `<span class="drought" style="color: ${rgbFor(color)}">${color.toUpperCase()} DROUGHT x${count}</span>`;
+				return count < DROUGHT_DISPLAY_THRESHOLD ? null : { color, count };
 			}
 
 			// This layout has no round-state banner above the bottle (the VIR/next/SPD strip
@@ -537,9 +564,10 @@
 					el.innerHTML = `<span class="side-box-label rush">RUSH</span><span class="side-box-value rush">x${s.rushStreak}</span>`;
 					return;
 				}
-				const drought = droughtStatusHtml(s.colorDroughts);
+				const drought = worstDrought(s.colorDroughts);
 				if (drought) {
-					el.innerHTML = `<span class="side-box-label">DROUGHT</span><span class="side-box-value">${drought}</span>`;
+					const color = rgbFor(drought.color);
+					el.innerHTML = `<span class="side-box-label" style="color: ${color}">DROUGHT</span><span class="side-box-value" style="color: ${color}">x${drought.count}</span>`;
 					return;
 				}
 				el.innerHTML = `<span class="side-box-label">COMBO/MIN</span><span class="side-box-value">${s.garbageWavesSentPerMinute.toFixed(1)}</span>`;
@@ -566,9 +594,15 @@
 					result.replace('_', ' ').toUpperCase();
 
 				const s = latestSnapshot[playerKey];
-				document.getElementById(`freeze-stats-${playerKey}`).textContent = s
-					? `Combos: ${s.garbageWavesSent} / SALT ${s.saltSeconds.toFixed(1)}s / CUR ${s.averageGarbageWaveSize.toFixed(3)}`
-					: '';
+				document.getElementById(`freeze-combos-${playerKey}`).textContent = s
+					? s.garbageWavesSent
+					: '?';
+				document.getElementById(`freeze-salt-${playerKey}`).textContent = s
+					? s.saltSeconds.toFixed(1)
+					: '?';
+				document.getElementById(`freeze-cur-${playerKey}`).textContent = s
+					? s.averageGarbageWaveSize.toFixed(3)
+					: '?';
 			}
 
 			function renderStats(playerKey, s) {
