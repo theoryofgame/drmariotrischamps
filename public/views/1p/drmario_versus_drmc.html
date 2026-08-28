@@ -648,12 +648,16 @@
 
 			// The character/virus celebration pose that plays right as a round ends isn't OCR-
 			// matched at all (see CLAUDE.md's "Known gaps") and can already be on screen -- and
-			// obscuring real cells near the top of the bottle -- for a frame or two before result
+			// obscuring real cells near the top of the bottle -- for a few frames before result
 			// actually leaves 'playing' (reported live, with a screenshot showing garbled/
 			// undetected cells in the frozen board). Freezing on literally the last frame drawn
 			// risks freezing on that already-obscured one. A short rolling history of recent board
-			// reads (per player) lets the freeze step back to the frame just before it instead.
-			const BOARD_HISTORY_SIZE = 2;
+			// reads (per player) lets the freeze step back to an earlier one instead -- 1 frame of
+			// lookback (the previous size) still showed grey "unknown" cells on stage_clear
+			// (reported live), so this uses the *oldest* remembered frame in the buffer, not just
+			// the one right before the last; easy to tune the buffer size further if still not
+			// enough.
+			const BOARD_HISTORY_SIZE = 5;
 			const boardHistory = { '1p': [], '2p': [] };
 
 			function recordBoardHistory(playerKey, board) {
@@ -662,12 +666,8 @@
 				if (history.length > BOARD_HISTORY_SIZE) history.shift();
 			}
 
-			// history's last entry is the very frame that was just drawn (possibly already
-			// obscured); prefer the one before it if there is one.
 			function freezeOnEarlierBoard(playerKey) {
-				const history = boardHistory[playerKey];
-				const board =
-					history.length > 1 ? history[history.length - 2] : history[0];
+				const board = boardHistory[playerKey][0]; // oldest remembered frame
 				if (board) {
 					renderBoard(document.getElementById(`board-${playerKey}`), board);
 				}
