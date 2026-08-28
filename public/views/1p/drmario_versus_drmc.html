@@ -720,17 +720,22 @@
 
 			// The synced side's own outcome string is a synthetic "opponent_<outcome>" (see the
 			// endRound() cross-wiring above), not one of the real ResultOCR states this bottle's
-			// own OCR read -- an earlier version showed a generic "ROUND OVER" for it rather than
-			// guess at a specific label, but that reads as a mismatch when the two bottles' text
-			// visibly disagrees (reported live: one side "GAME OVER", the other "ROUND OVER").
-			// Simply reusing the same underlying word instead reads as consistent, and the round
-			// boundary really is shared -- both bottles do end up on one shared outcome, even if
-			// only one of them is the one whose own OCR read confirmed it directly.
+			// own OCR read. game_over is genuinely shared -- both bottles really do end up on the
+			// same match/session-ending screen -- so it reuses the same word on both sides (an
+			// earlier version showed a generic "ROUND OVER" instead, which read as a mismatch once
+			// both bottles' text was visible side by side: one "GAME OVER", the other "ROUND
+			// OVER"). topout/stage_clear are different: those are genuinely per-bottle outcomes,
+			// not shared ones -- the synced side didn't itself top out or clear its stage, so
+			// labeling it that way would be actively wrong, not just vague (reported live, asked
+			// for directly). Left blank there instead -- the freeze/dim + stats recap still shows,
+			// just without a specific (and inaccurate) outcome claim.
 			function formatOutcome(outcome) {
-				return outcome
-					.replace(/^opponent_/, '')
-					.replace('_', ' ')
-					.toUpperCase();
+				const isSynced = outcome.startsWith('opponent_');
+				const realOutcome = outcome.replace(/^opponent_/, '');
+
+				if (isSynced && realOutcome !== 'game_over') return '';
+
+				return realOutcome.replace('_', ' ').toUpperCase();
 			}
 
 			function updateFreezeOverlay(playerKey) {
