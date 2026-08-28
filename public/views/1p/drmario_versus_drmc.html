@@ -594,25 +594,64 @@
 				el.innerHTML = `<span class="side-box-label">COMBO/MIN</span><span class="side-box-value">${s.garbageWavesSentPerMinute.toFixed(1)}</span>`;
 			}
 
-			// Round-end freeze + dim: renderBoard() below is only ever called while result is
-			// 'playing' (see renderFrame), so once a round ends the canvas simply keeps showing
-			// its last-drawn frame with no snapshot/caching code needed -- this overlay just adds
-			// the dim + a stats recap on top of it. Stays hidden for hasBottle:false frames with
-			// no result at all (pause/menu/title outside a round) -- there's nothing meaningful to
-			// recap there, and the board is already frozen visually either way.
-			const latestResult = { '1p': null, '2p': null };
+			// Round-end freeze + dim: renderBoard() below is only ever called while the round is
+			// active (see renderFrame), so once it ends the canvas simply keeps showing its last-
+			// drawn frame with no snapshot/caching code needed -- this overlay just adds the dim +
+			// a stats recap on top of it.
+			//
+			// Driven by each tracker's own round_end/round_start events, NOT the raw per-frame
+			// result field -- versus's round boundary is shared (one player's win/loss ends the
+			// round for both), but the *other* bottle's own result reading can keep showing
+			// 'playing' regardless (see RoundTracker.js's header comment), so gating on the raw
+			// field left that side's overlay never appearing at all (reported live: only one side
+			// ever froze/dimmed). trackers.playerX.endRound()/syncRoundStart() (already cross-
+			// wired above) exist specifically to give both bottles a correct, shared view of the
+			// boundary regardless of which one's own result actually transitioned -- listening to
+			// round_end/round_start instead of the raw field uses that correctly.
+			const roundEnded = { '1p': false, '2p': false };
+			const lastOutcome = { '1p': null, '2p': null };
 			const latestSnapshot = { '1p': null, '2p': null };
+
+			trackers.player1.addEventListener('round_end', e => {
+				roundEnded['1p'] = true;
+				lastOutcome['1p'] = e.detail.outcome;
+				updateFreezeOverlay('1p');
+			});
+			trackers.player1.addEventListener('round_start', () => {
+				roundEnded['1p'] = false;
+				updateFreezeOverlay('1p');
+			});
+			trackers.player2.addEventListener('round_end', e => {
+				roundEnded['2p'] = true;
+				lastOutcome['2p'] = e.detail.outcome;
+				updateFreezeOverlay('2p');
+			});
+			trackers.player2.addEventListener('round_start', () => {
+				roundEnded['2p'] = false;
+				updateFreezeOverlay('2p');
+			});
+
+			// The synced side's own outcome string is a synthetic "opponent_<outcome>" (see the
+			// endRound() cross-wiring above), not one of the real ResultOCR states -- there's no
+			// confirmed capture of what that bottle's own screen actually shows in this window
+			// (RoundTracker.js's header comment flags this as "reportedly live, not yet
+			// captured"), so rather than guess at a specific label, it just reads as a generic
+			// "round over" instead of claiming a specific outcome that side didn't necessarily see.
+			function formatOutcome(outcome) {
+				return outcome.startsWith('opponent_')
+					? 'ROUND OVER'
+					: outcome.replace('_', ' ').toUpperCase();
+			}
 
 			function updateFreezeOverlay(playerKey) {
 				const overlayEl = document.getElementById(`freeze-${playerKey}`);
-				const result = latestResult[playerKey];
-				const frozen = result !== null && result !== 'playing';
+				const frozen = roundEnded[playerKey];
 				overlayEl.classList.toggle('visible', frozen);
 
 				if (!frozen) return;
 
 				document.getElementById(`freeze-outcome-${playerKey}`).textContent =
-					result.replace('_', ' ').toUpperCase();
+					formatOutcome(lastOutcome[playerKey]);
 
 				const s = latestSnapshot[playerKey];
 				document.getElementById(`freeze-ppm-${playerKey}`).textContent = s
@@ -712,18 +751,16 @@
 				document.getElementById('player-name-2p').textContent =
 					data.playerNames?.player2 ?? 'Player 2';
 
-				latestResult['1p'] = data.player1.result;
-				latestResult['2p'] = data.player2.result;
-				updateFreezeOverlay('1p');
-				updateFreezeOverlay('2p');
-
-				// Only redraw while the round is actually in progress -- once result leaves
-				// 'playing', skipping this leaves the canvas showing its last-drawn frame, which
-				// is exactly the "freeze" the dim overlay is layered on top of.
-				if (latestResult['1p'] === 'playing') {
+				// Only redraw while the round hasn't ended (per roundEnded, not the raw per-frame
+				// result -- see updateFreezeOverlay's comment for why) -- skipping this leaves the
+				// canvas showing its last-drawn frame, which is exactly the "freeze" the dim
+				// overlay is layered on top of. Also guarded on the board actually being present,
+				// so an ordinary hasBottle:false frame (pause/menu, board: null, round not
+				// actually over) doesn't clear the canvas via renderBoard's own null-board check.
+				if (!roundEnded['1p'] && data.player1.board) {
 					renderBoard(document.getElementById('board-1p'), data.player1.board);
 				}
-				if (latestResult['2p'] === 'playing') {
+				if (!roundEnded['2p'] && data.player2.board) {
 					renderBoard(document.getElementById('board-2p'), data.player2.board);
 				}
 
