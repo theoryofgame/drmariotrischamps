@@ -88,12 +88,23 @@
 				border-color: #fae65f;
 			}
 
+			/* #playfield centers #playfield-row as a whole (vertically and horizontally) in the
+			   space between the two bars. #playfield-row is a *separate* nested flex row, sized to
+			   its own tallest child (.player-column), with align-items: flex-end so the shorter
+			   .side-box elements bottom-align to it -- align-items: flex-end directly on
+			   #playfield instead (tried first) bottom-aligned the whole row against #playfield's
+			   own full height rather than against .player-column's height, which visibly shoved
+			   the entire row down to the bottom of the page instead of just bottom-aligning the
+			   side boxes within it (reported live). */
 			#playfield {
 				flex: 1 1 auto;
 				display: flex;
-				/* flex-end, not center: .player-column's own bottom edge is the bottle's bottom
-				   edge (the top-strip sits above it), so this aligns each .side-box's bottom with
-				   its bottle's bottom rather than floating it mid-height. */
+				align-items: center;
+				justify-content: center;
+			}
+
+			#playfield-row {
+				display: flex;
 				align-items: flex-end;
 				justify-content: center;
 				gap: 16px;
@@ -214,12 +225,18 @@
 				flex-direction: column;
 				align-items: center;
 				justify-content: center;
-				gap: 8px;
+				gap: 10px;
 				opacity: 0;
 				pointer-events: none;
 				transition: opacity 0.4s;
 				text-align: center;
 				padding: 12px;
+				/* .board-wrap (this element's parent) sets line-height: 0 to kill whitespace
+				   under its inline-block canvas -- that inherits into every text descendant here
+				   too unless reset, which collapsed every line of text in this overlay on top of
+				   itself (reported live, looked like literal text overlap, not just tight
+				   spacing -- that's exactly what it was). */
+				line-height: normal;
 			}
 
 			.freeze-overlay.visible {
@@ -281,92 +298,96 @@
 			</div>
 
 			<div id="playfield">
-				<div class="side-box" id="side-box-1p">
-					<span class="side-box-label">COMBO/MIN</span>
-					<span class="side-box-value">0.0</span>
-				</div>
-
-				<div class="player-column">
-					<div class="top-strip">
-						<div class="strip-box">
-							<span class="strip-label">VIR</span>
-							<span class="strip-value" id="vir-1p">?</span>
-						</div>
-						<div class="strip-box next-pill-box">
-							<canvas class="next-pill-canvas" id="next-1p"></canvas>
-						</div>
-						<div class="strip-box">
-							<span class="strip-label">SPD</span>
-							<span class="strip-value" id="spd-1p">?</span>
-						</div>
+				<div id="playfield-row">
+					<div class="side-box" id="side-box-1p">
+						<span class="side-box-label">COMBO/MIN</span>
+						<span class="side-box-value">0.0</span>
 					</div>
-					<div class="bottle-border-red">
-						<div class="bottle-border-cyan">
-							<div class="bottle-border-gold">
-								<div class="board-wrap">
-									<canvas class="board-canvas" id="board-1p"></canvas>
-									<div class="freeze-overlay" id="freeze-1p">
-										<p class="freeze-outcome" id="freeze-outcome-1p"></p>
-										<img
-											class="freeze-logo"
-											id="freeze-logo-1p"
-											src="/producer/drmario/drmc_logo.jpg"
-											alt=""
-										/>
-										<div class="freeze-stats" id="freeze-stats-1p">
-											<p>Combos: <span id="freeze-combos-1p"></span></p>
-											<p>SALT: <span id="freeze-salt-1p"></span>s</p>
-											<p>CUR: <span id="freeze-cur-1p"></span></p>
+
+					<div class="player-column">
+						<div class="top-strip">
+							<div class="strip-box">
+								<span class="strip-label">VIR</span>
+								<span class="strip-value" id="vir-1p">?</span>
+							</div>
+							<div class="strip-box next-pill-box">
+								<canvas class="next-pill-canvas" id="next-1p"></canvas>
+							</div>
+							<div class="strip-box">
+								<span class="strip-label">SPD</span>
+								<span class="strip-value" id="spd-1p">?</span>
+							</div>
+						</div>
+						<div class="bottle-border-red">
+							<div class="bottle-border-cyan">
+								<div class="bottle-border-gold">
+									<div class="board-wrap">
+										<canvas class="board-canvas" id="board-1p"></canvas>
+										<div class="freeze-overlay" id="freeze-1p">
+											<p class="freeze-outcome" id="freeze-outcome-1p"></p>
+											<img
+												class="freeze-logo"
+												id="freeze-logo-1p"
+												src="/producer/drmario/drmc_logo.jpg"
+												alt=""
+											/>
+											<div class="freeze-stats" id="freeze-stats-1p">
+												<p>Pieces/min: <span id="freeze-ppm-1p"></span></p>
+												<p>Combos: <span id="freeze-combos-1p"></span></p>
+												<p>SALT: <span id="freeze-salt-1p"></span>s</p>
+												<p>CUR: <span id="freeze-cur-1p"></span></p>
+											</div>
 										</div>
 									</div>
 								</div>
 							</div>
 						</div>
 					</div>
-				</div>
 
-				<div class="player-column">
-					<div class="top-strip">
-						<div class="strip-box">
-							<span class="strip-label">VIR</span>
-							<span class="strip-value" id="vir-2p">?</span>
+					<div class="player-column">
+						<div class="top-strip">
+							<div class="strip-box">
+								<span class="strip-label">VIR</span>
+								<span class="strip-value" id="vir-2p">?</span>
+							</div>
+							<div class="strip-box next-pill-box">
+								<canvas class="next-pill-canvas" id="next-2p"></canvas>
+							</div>
+							<div class="strip-box">
+								<span class="strip-label">SPD</span>
+								<span class="strip-value" id="spd-2p">?</span>
+							</div>
 						</div>
-						<div class="strip-box next-pill-box">
-							<canvas class="next-pill-canvas" id="next-2p"></canvas>
-						</div>
-						<div class="strip-box">
-							<span class="strip-label">SPD</span>
-							<span class="strip-value" id="spd-2p">?</span>
-						</div>
-					</div>
-					<div class="bottle-border-red">
-						<div class="bottle-border-cyan">
-							<div class="bottle-border-gold">
-								<div class="board-wrap">
-									<canvas class="board-canvas" id="board-2p"></canvas>
-									<div class="freeze-overlay" id="freeze-2p">
-										<p class="freeze-outcome" id="freeze-outcome-2p"></p>
-										<img
-											class="freeze-logo"
-											id="freeze-logo-2p"
-											src="/producer/drmario/drmc_logo.jpg"
-											alt=""
-										/>
-										<div class="freeze-stats" id="freeze-stats-2p">
-											<p>Combos: <span id="freeze-combos-2p"></span></p>
-											<p>SALT: <span id="freeze-salt-2p"></span>s</p>
-											<p>CUR: <span id="freeze-cur-2p"></span></p>
+						<div class="bottle-border-red">
+							<div class="bottle-border-cyan">
+								<div class="bottle-border-gold">
+									<div class="board-wrap">
+										<canvas class="board-canvas" id="board-2p"></canvas>
+										<div class="freeze-overlay" id="freeze-2p">
+											<p class="freeze-outcome" id="freeze-outcome-2p"></p>
+											<img
+												class="freeze-logo"
+												id="freeze-logo-2p"
+												src="/producer/drmario/drmc_logo.jpg"
+												alt=""
+											/>
+											<div class="freeze-stats" id="freeze-stats-2p">
+												<p>Pieces/min: <span id="freeze-ppm-2p"></span></p>
+												<p>Combos: <span id="freeze-combos-2p"></span></p>
+												<p>SALT: <span id="freeze-salt-2p"></span>s</p>
+												<p>CUR: <span id="freeze-cur-2p"></span></p>
+											</div>
 										</div>
 									</div>
 								</div>
 							</div>
 						</div>
 					</div>
-				</div>
 
-				<div class="side-box" id="side-box-2p">
-					<span class="side-box-label">COMBO/MIN</span>
-					<span class="side-box-value">0.0</span>
+					<div class="side-box" id="side-box-2p">
+						<span class="side-box-label">COMBO/MIN</span>
+						<span class="side-box-value">0.0</span>
+					</div>
 				</div>
 			</div>
 
@@ -594,6 +615,9 @@
 					result.replace('_', ' ').toUpperCase();
 
 				const s = latestSnapshot[playerKey];
+				document.getElementById(`freeze-ppm-${playerKey}`).textContent = s
+					? s.piecesPerMinute.toFixed(1)
+					: '?';
 				document.getElementById(`freeze-combos-${playerKey}`).textContent = s
 					? s.garbageWavesSent
 					: '?';
@@ -622,7 +646,10 @@
 			// CellRenderer.js (pill halves/singles, animated viruses) instead of flat colored
 			// squares -- see drmario_versus_nes.html, which this layout's chrome is built on top
 			// of.
-			const CELL_PX = 24; // 3x the native 8px NES tile -- a clean integer scale
+			// 3.5x the native 8px NES tile -- bumped up from 24px (an exact 3x) per direct
+			// feedback that the bottles should be slightly bigger; still comfortably fits the
+			// 720px-tall page alongside the bars/strip with room to spare.
+			const CELL_PX = 28;
 			const NEXT_PILL_CELL_PX = 16; // smaller, to fit the slim top strip
 
 			function renderBoard(canvas, board) {
