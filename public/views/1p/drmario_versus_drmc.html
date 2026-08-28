@@ -719,15 +719,18 @@
 			});
 
 			// The synced side's own outcome string is a synthetic "opponent_<outcome>" (see the
-			// endRound() cross-wiring above), not one of the real ResultOCR states -- there's no
-			// confirmed capture of what that bottle's own screen actually shows in this window
-			// (RoundTracker.js's header comment flags this as "reportedly live, not yet
-			// captured"), so rather than guess at a specific label, it just reads as a generic
-			// "round over" instead of claiming a specific outcome that side didn't necessarily see.
+			// endRound() cross-wiring above), not one of the real ResultOCR states this bottle's
+			// own OCR read -- an earlier version showed a generic "ROUND OVER" for it rather than
+			// guess at a specific label, but that reads as a mismatch when the two bottles' text
+			// visibly disagrees (reported live: one side "GAME OVER", the other "ROUND OVER").
+			// Simply reusing the same underlying word instead reads as consistent, and the round
+			// boundary really is shared -- both bottles do end up on one shared outcome, even if
+			// only one of them is the one whose own OCR read confirmed it directly.
 			function formatOutcome(outcome) {
-				return outcome.startsWith('opponent_')
-					? 'ROUND OVER'
-					: outcome.replace('_', ' ').toUpperCase();
+				return outcome
+					.replace(/^opponent_/, '')
+					.replace('_', ' ')
+					.toUpperCase();
 			}
 
 			function updateFreezeOverlay(playerKey) {
