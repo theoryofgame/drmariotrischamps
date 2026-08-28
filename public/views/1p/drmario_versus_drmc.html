@@ -235,6 +235,13 @@
 			.freeze-logo {
 				max-width: 70%;
 				max-height: 40%;
+				/* The provided logo is a JPEG with a solid white square background (no alpha) --
+				   multiply blends white away against the dark overlay behind it, faking
+				   transparency reasonably well without needing a real transparent PNG. Safe to
+				   leave in place if a transparent PNG replaces this later -- multiply is a no-op
+				   over actually-transparent pixels, it only affects the logo's own opaque ones
+				   (a mild darkening/desaturation against the dark backdrop, not a problem here). */
+				mix-blend-mode: multiply;
 			}
 
 			.rush {
@@ -287,7 +294,7 @@
 										<img
 											class="freeze-logo"
 											id="freeze-logo-1p"
-											src="/producer/drmario/drmc_logo.png"
+											src="/producer/drmario/drmc_logo.jpg"
 											alt=""
 										/>
 									</div>
@@ -322,7 +329,7 @@
 										<img
 											class="freeze-logo"
 											id="freeze-logo-2p"
-											src="/producer/drmario/drmc_logo.png"
+											src="/producer/drmario/drmc_logo.jpg"
 											alt=""
 										/>
 									</div>
@@ -381,8 +388,8 @@
 				`${wsProtocol}//${location.host}/ws/view/drmario/${layout}/${secret}`
 			);
 
-			// A missing logo asset (not yet provided) just fails to load quietly -- hide the
-			// element rather than showing a broken-image icon over the freeze overlay.
+			// A missing/broken logo asset just fails to load quietly -- hide the element rather
+			// than showing a broken-image icon over the freeze overlay.
 			['freeze-logo-1p', 'freeze-logo-2p'].forEach(id => {
 				const img = document.getElementById(id);
 				img.addEventListener('error', () => {
