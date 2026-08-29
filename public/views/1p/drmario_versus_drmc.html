@@ -646,19 +646,39 @@
 			const lastOutcome = { '1p': null, '2p': null };
 			const latestSnapshot = { '1p': null, '2p': null };
 
+			// The "opponent_<outcome>" synthetic prefix (see the endRound() cross-wiring above)
+			// marks the synced side's own round_end -- not a real ResultOCR state this bottle's
+			// own OCR read directly, just the same boundary relayed from the other bottle. Shared
+			// by formatOutcome() and freezeOnEarlierBoard() below, both of which care about the
+			// *real* underlying outcome, not which side experienced it directly.
+			function realOutcomeOf(outcome) {
+				return outcome.replace(/^opponent_/, '');
+			}
+
 			// The character/virus celebration pose that plays right as a round ends isn't OCR-
-			// matched at all (see CLAUDE.md's "Known gaps") and can already be on screen -- and
-			// obscuring real cells near the top of the bottle -- for a few frames before result
-			// actually leaves 'playing' (reported live, with a screenshot showing garbled/
-			// undetected cells in the frozen board). Freezing on literally the last frame drawn
-			// risks freezing on that already-obscured one. A short rolling history of recent board
-			// reads (per player) lets the freeze step back to an earlier one instead -- 1 frame of
-			// lookback (the previous size) still showed grey "unknown" cells on stage_clear
-			// (reported live), so this uses the *oldest* remembered frame in the buffer, not just
-			// the one right before the last; easy to tune the buffer size further if still not
-			// enough.
-			const BOARD_HISTORY_SIZE = 5;
+			// matched at all (see CLAUDE.md's "Known gaps") and can obscure real cells near the top
+			// of the bottle for a few frames before result actually leaves 'playing'. For topout/
+			// game_over there's no better signal than "how many frames back", tuned per outcome
+			// from live reports (topout's own result box is small and doesn't cover the board the
+			// way stage_clear's/game_over's do -- see ResultOCR.js's own docs -- so it needs much
+			// less correcting for, or none). stage_clear is different: RoundTracker's own
+			// virus_cleared event already reports the *exact* frame the virus count reaches 0 --
+			// the real moment the stage is cleared, well before ResultOCR confirms it and any
+			// celebration pose has a chance to appear -- so rather than guess a frame count for it,
+			// stageClearBoard below captures the board directly at that moment and this uses it in
+			// preference to the lookback table whenever it's available (it won't be for the synced
+			// side unless that bottle also happened to clear its own viruses, in which case the
+			// lookback table remains the fallback).
+			const BOARD_LOOKBACK_FRAMES = {
+				topout: 0,
+				stage_clear: 4,
+				game_over: 4,
+			};
+			const DEFAULT_BOARD_LOOKBACK_FRAMES = 2;
+			const BOARD_HISTORY_SIZE =
+				Math.max(...Object.values(BOARD_LOOKBACK_FRAMES)) + 1;
 			const boardHistory = { '1p': [], '2p': [] };
+			const stageClearBoard = { '1p': null, '2p': null };
 
 			function recordBoardHistory(playerKey, board) {
 				const history = boardHistory[playerKey];
@@ -666,11 +686,42 @@
 				if (history.length > BOARD_HISTORY_SIZE) history.shift();
 			}
 
-			function freezeOnEarlierBoard(playerKey) {
-				const board = boardHistory[playerKey][0]; // oldest remembered frame
-				if (board) {
-					renderBoard(document.getElementById(`board-${playerKey}`), board);
+			trackers.player1.addEventListener('virus_cleared', e => {
+				if (e.detail.virusCount === 0) {
+					const history = boardHistory['1p'];
+					stageClearBoard['1p'] = history[history.length - 1] ?? null;
 				}
+			});
+			trackers.player2.addEventListener('virus_cleared', e => {
+				if (e.detail.virusCount === 0) {
+					const history = boardHistory['2p'];
+					stageClearBoard['2p'] = history[history.length - 1] ?? null;
+				}
+			});
+
+			function freezeOnEarlierBoard(playerKey, outcome) {
+				if (
+					realOutcomeOf(outcome) === 'stage_clear' &&
+					stageClearBoard[playerKey]
+				) {
+					renderBoard(
+						document.getElementById(`board-${playerKey}`),
+						stageClearBoard[playerKey]
+					);
+					return;
+				}
+
+				const history = boardHistory[playerKey];
+				if (history.length === 0) return;
+
+				const lookback =
+					BOARD_LOOKBACK_FRAMES[realOutcomeOf(outcome)] ??
+					DEFAULT_BOARD_LOOKBACK_FRAMES;
+				const index = Math.max(0, history.length - 1 - lookback);
+				renderBoard(
+					document.getElementById(`board-${playerKey}`),
+					history[index]
+				);
 			}
 
 			// The match itself (not just the round) is decided the instant either player reaches
@@ -680,15 +731,39 @@
 			// transition frame misread as an empty board), which fires a bogus round_start.
 			// Without this guard that reset LiveMetrics' stats and dropped the freeze overlay right
 			// when it matters most. Once matchOver is set, both players' freeze/dim + stats recap
-			// are locked in place for good -- round_start can no longer un-freeze them, and their
-			// stats snapshots stop updating, so nothing shown can drift after the match is over.
+			// are locked in place -- round_start can no longer un-freeze them, and their stats
+			// snapshots stop updating, so nothing shown can drift while the GAME OVER screen is up.
+			//
+			// That lock used to be permanent, which turned out to be overly aggressive (reported
+			// live): after GAME OVER, the game eventually returns to a menu to set up another
+			// match, and with no way to detect that, the frozen overlay stayed stuck until the
+			// whole page was reloaded. Crown count is the fix here too: once a fresh match begins
+			// (or the crown grid simply isn't on screen at all right now -- menu/title, nothing
+			// crown-shaped to read), both crowns read back at 0, which the previous match's "one
+			// side has 3" state could never do on its own -- so seeing 0-0 while matchOver is set
+			// is an unambiguous signal to unlock everything for the next match.
 			let matchOver = false;
 
-			function checkMatchOver(crowns) {
-				if (
-					!matchOver &&
-					(crowns.player1.wins >= 3 || crowns.player2.wins >= 3)
-				) {
+			function resetMatchState() {
+				matchOver = false;
+				['1p', '2p'].forEach(playerKey => {
+					roundEnded[playerKey] = false;
+					lastOutcome[playerKey] = null;
+					latestSnapshot[playerKey] = null;
+					boardHistory[playerKey] = [];
+					stageClearBoard[playerKey] = null;
+					updateFreezeOverlay(playerKey);
+				});
+			}
+
+			function checkMatchState(crowns) {
+				if (matchOver) {
+					if (crowns.player1.wins === 0 && crowns.player2.wins === 0) {
+						resetMatchState();
+					}
+					return;
+				}
+				if (crowns.player1.wins >= 3 || crowns.player2.wins >= 3) {
 					matchOver = true;
 				}
 			}
@@ -696,42 +771,42 @@
 			trackers.player1.addEventListener('round_end', e => {
 				roundEnded['1p'] = true;
 				lastOutcome['1p'] = e.detail.outcome;
-				freezeOnEarlierBoard('1p');
+				freezeOnEarlierBoard('1p', e.detail.outcome);
 				updateFreezeOverlay('1p');
 			});
 			trackers.player1.addEventListener('round_start', () => {
 				if (matchOver) return;
 				roundEnded['1p'] = false;
 				boardHistory['1p'] = [];
+				stageClearBoard['1p'] = null;
 				updateFreezeOverlay('1p');
 			});
 			trackers.player2.addEventListener('round_end', e => {
 				roundEnded['2p'] = true;
 				lastOutcome['2p'] = e.detail.outcome;
-				freezeOnEarlierBoard('2p');
+				freezeOnEarlierBoard('2p', e.detail.outcome);
 				updateFreezeOverlay('2p');
 			});
 			trackers.player2.addEventListener('round_start', () => {
 				if (matchOver) return;
 				roundEnded['2p'] = false;
 				boardHistory['2p'] = [];
+				stageClearBoard['2p'] = null;
 				updateFreezeOverlay('2p');
 			});
 
-			// The synced side's own outcome string is a synthetic "opponent_<outcome>" (see the
-			// endRound() cross-wiring above), not one of the real ResultOCR states this bottle's
-			// own OCR read. game_over is genuinely shared -- both bottles really do end up on the
-			// same match/session-ending screen -- so it reuses the same word on both sides (an
-			// earlier version showed a generic "ROUND OVER" instead, which read as a mismatch once
-			// both bottles' text was visible side by side: one "GAME OVER", the other "ROUND
-			// OVER"). topout/stage_clear are different: those are genuinely per-bottle outcomes,
-			// not shared ones -- the synced side didn't itself top out or clear its stage, so
-			// labeling it that way would be actively wrong, not just vague (reported live, asked
-			// for directly). Left blank there instead -- the freeze/dim + stats recap still shows,
-			// just without a specific (and inaccurate) outcome claim.
+			// game_over is genuinely shared -- both bottles really do end up on the same
+			// match/session-ending screen -- so the synced side reuses the same word (an earlier
+			// version showed a generic "ROUND OVER" instead, which read as a mismatch once both
+			// bottles' text was visible side by side: one "GAME OVER", the other "ROUND OVER").
+			// topout/stage_clear are different: those are genuinely per-bottle outcomes, not
+			// shared ones -- the synced side didn't itself top out or clear its stage, so labeling
+			// it that way would be actively wrong, not just vague (reported live, asked for
+			// directly). Left blank there instead -- the freeze/dim + stats recap still shows, just
+			// without a specific (and inaccurate) outcome claim.
 			function formatOutcome(outcome) {
 				const isSynced = outcome.startsWith('opponent_');
-				const realOutcome = outcome.replace(/^opponent_/, '');
+				const realOutcome = realOutcomeOf(outcome);
 
 				if (isSynced && realOutcome !== 'game_over') return '';
 
@@ -896,7 +971,7 @@
 
 				renderCrowns('1p', data.crowns.player1.wins);
 				renderCrowns('2p', data.crowns.player2.wins);
-				checkMatchOver(data.crowns);
+				checkMatchState(data.crowns);
 
 				trackers.player1.processFrame(data.player1);
 				trackers.player2.processFrame(data.player2);
