@@ -143,8 +143,12 @@
 			/* Fixed width, not min-width -- this box's content changes live (combo rate vs. a
 			   drought/rush callout) and must never nudge the bottles/other boxes around while a
 			   round is in progress, so its footprint is locked regardless of content. */
+			/* Black background, not white -- the drought callout's per-color text (see
+			   worstDrought()/renderSideBox()) reused COLOR_PALETTE's actual game colors directly,
+			   and yellow's own real value is a muted, dark yellow-green that read as very low
+			   contrast against white (reported live). Same colors read clearly against black. */
 			.side-box {
-				background: #fff;
+				background: #0a0b0a;
 				border: 2px solid #64b7d5;
 				border-radius: 4px;
 				padding: 8px 12px;
@@ -157,14 +161,14 @@
 				display: block;
 				font-size: 11px;
 				font-weight: bold;
-				color: #555;
+				color: #aaa;
 			}
 
 			.side-box-value {
 				display: block;
 				font-size: 16px;
 				font-weight: bold;
-				color: #000;
+				color: #fff;
 				margin-top: 2px;
 			}
 
