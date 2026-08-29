@@ -767,6 +767,12 @@
 					boardHistory[playerKey] = [];
 					lastClearingBoard[playerKey] = null;
 					updateFreezeOverlay(playerKey);
+					// Un-freezing alone left the previous match's last frame sitting there
+					// undimmed for the whole menu-browsing period, since renderBoard() is never
+					// called with a real board while on a menu screen (hasBottle: false, board:
+					// null) -- explicitly clear it here instead of waiting for the next match's
+					// first real board to eventually paint over it (requested directly).
+					renderBoard(document.getElementById(`board-${playerKey}`), null);
 				});
 			}
 
