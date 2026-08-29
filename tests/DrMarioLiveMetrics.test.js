@@ -149,19 +149,18 @@ describe('LiveMetrics', () => {
 			roundTracker.processFrame(frame({ virus: 0 })); // round_start
 		});
 
-		it('flags isRushing once the exact same piece (including orientation) repeats 4+ times', () => {
+		it('flags isRushing once the exact same piece (including orientation) repeats 3+ times', () => {
 			spawnPiece(roundTracker, 'red', 'red');
 			expect(stats.getSnapshot().isRushing).toBe(false);
 
-			spawnPiece(roundTracker, 'red', 'red');
 			spawnPiece(roundTracker, 'red', 'red');
 			expect(stats.getSnapshot().isRushing).toBe(false);
 
 			spawnPiece(roundTracker, 'red', 'red');
 			const snapshot = stats.getSnapshot();
 			expect(snapshot.isRushing).toBe(true);
-			expect(snapshot.rushStreak).toBe(4);
-			expect(snapshot.maxRushStreak).toBe(4);
+			expect(snapshot.rushStreak).toBe(3);
+			expect(snapshot.maxRushStreak).toBe(3);
 		});
 
 		it('does not count a same-color-set piece with swapped orientation as a repeat -- reproduces the confirmed example', () => {

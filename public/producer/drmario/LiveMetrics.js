@@ -21,7 +21,7 @@
 import { COLOR_PALETTE } from './constants.js';
 
 const COLORS = Object.keys(COLOR_PALETTE);
-const RUSH_MIN_LENGTH = 4; // pieces; below this, isRushing is false even though raw counting continues
+const RUSH_MIN_LENGTH = 3; // pieces; below this, isRushing is false even though raw counting continues
 // Garbage falls at a constant rate regardless of game speed. 0.25s/row, per the user -- briefly
 // changed to 0.2667 on a correction that turned out to be wrong and reverted back to the
 // original 0.25 figure. Exported so a view wanting to animate a wave's SALT contribution
