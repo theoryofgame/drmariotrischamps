@@ -868,6 +868,68 @@ describe('RoundTracker', () => {
 			expect(event.detail.cells.find(c => c.col === 2).restRows).toBe(16);
 			expect(event.detail.maxRestRows).toBe(16);
 		});
+
+		it('does not report a leftover half-pill from the previous round as garbage before a clean top row has been observed', () => {
+			// round_start frame itself already has a leftover 'single' half sitting in the top
+			// row -- simulating an artifact from the previous round's match-clear that hasn't
+			// visually cleared yet (reported live: this looked exactly like an incoming garbage
+			// wave right at the start of a round, before the player's first piece had even spawned).
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 5, row: 0, type: 'pill', shape: 'single', color: 'red' },
+					],
+				})
+			); // round_start
+			expect(events.filter(e => e.type === 'garbage_entered')).toEqual([]);
+
+			// still just sitting there -- no false detection on a later frame either
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 5, row: 0, type: 'pill', shape: 'single', color: 'red' },
+					],
+				})
+			);
+			expect(events.filter(e => e.type === 'garbage_entered')).toEqual([]);
+		});
+
+		it('arms garbage detection once a genuinely empty top row has been observed', () => {
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 5, row: 0, type: 'pill', shape: 'single', color: 'red' },
+					],
+				})
+			); // round_start, leftover half still in the top row
+			events.length = 0;
+
+			tracker.processFrame(frame({ virus: 0 })); // leftover finally clears -- top row genuinely empty
+			events.length = 0;
+
+			tracker.processFrame(
+				frame({
+					virus: 0,
+					cells: [
+						{ col: 2, row: 0, type: 'pill', shape: 'single', color: 'blue' },
+					],
+				})
+			); // real garbage arrives
+
+			expect(events).toEqual([
+				{
+					type: 'garbage_entered',
+					detail: {
+						roundId: 1,
+						cells: [{ col: 2, shape: 'single', color: 'blue', restRows: 16 }],
+						maxRestRows: 16,
+					},
+				},
+			]);
+		});
 	});
 
 	describe('virus clear detection', () => {

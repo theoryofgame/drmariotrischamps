@@ -188,6 +188,7 @@ export default class RoundTracker extends EventTarget {
 	#lastNextPillKey = null;
 	#descentBaseline = null;
 	#topRowEmpty = new Array(COLS).fill(true); // last frame's row-0 occupancy, per column
+	#topRowConfirmedEmpty = false; // see #detectGarbageEntries -- guards against artifacts left over from the previous round
 	#endedExternally = false; // ended via endRound(), not this bottle's own result -- see syncRoundStart()
 
 	// frame: { board, level, virus, result, hasBottle, isTitleScreen, ... } -- i.e. one bottle's
@@ -375,6 +376,7 @@ export default class RoundTracker extends EventTarget {
 		this.#lastNextPillKey = null;
 		this.#descentBaseline = null;
 		this.#topRowEmpty = new Array(COLS).fill(true);
+		this.#topRowConfirmedEmpty = false;
 		this.#endedExternally = false;
 
 		this.dispatchEvent(
@@ -441,6 +443,20 @@ export default class RoundTracker extends EventTarget {
 	// restRowsForColumn) for a stats layer's benefit -- unused by round-lifecycle logic itself --
 	// plus maxRestRows on the event as a whole (the farthest-falling cell in the wave), since a
 	// consumer wanting "how stunning was this wave" shouldn't need to recompute a max itself.
+	//
+	// #topRowConfirmedEmpty guards against a real false positive (reported live, versus only): a
+	// half-pill orphaned by a match clear late in the *previous* round can still be visually
+	// sitting in the top row for the first frame or two of the *next* round, before the screen
+	// actually clears it -- and #topRowEmpty resets to an optimistic all-true default on every
+	// #startRound() (there's no real prior-frame observation to seed it with), so that leftover
+	// 'single' cell reads as a same-frame empty-to-single transition and looks exactly like
+	// incoming garbage, even though nothing has actually entered the bottle yet and no player
+	// piece has even spawned. Rather than wait specifically for the first real spawn (piece_entered
+	// requires the *paired* 'left'/'right' shapes on the fixed spawn columns specifically, so it
+	// wouldn't even see a stray 'single' sitting elsewhere), this waits for direct, positive
+	// evidence the row has genuinely gone clean -- a frame where every column reads empty -- since
+	// that's the actual condition #topRowEmpty's default was assuming without ever having
+	// confirmed it. Detection stays disarmed until that's been observed at least once per round.
 	#detectGarbageEntries(board) {
 		const newCells = [];
 		const topRowEmpty = [];
@@ -448,7 +464,11 @@ export default class RoundTracker extends EventTarget {
 		for (let col = 0; col < COLS; col++) {
 			const cell = board[0][col];
 
-			if (this.#topRowEmpty[col] && isGarbageHalf(cell)) {
+			if (
+				this.#topRowConfirmedEmpty &&
+				this.#topRowEmpty[col] &&
+				isGarbageHalf(cell)
+			) {
 				newCells.push({
 					col,
 					shape: cell.shape,
@@ -458,6 +478,10 @@ export default class RoundTracker extends EventTarget {
 			}
 
 			topRowEmpty.push(!cell || cell.type === 'empty');
+		}
+
+		if (!this.#topRowConfirmedEmpty && topRowEmpty.every(Boolean)) {
+			this.#topRowConfirmedEmpty = true;
 		}
 
 		if (newCells.length > 0) {
