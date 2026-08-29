@@ -680,6 +680,17 @@
 			// last such frame recorded is guaranteed to be *that* match, not an earlier ordinary
 			// one during ordinary play. Reset alongside boardHistory below (round_start,
 			// resetMatchState) so a new round doesn't inherit a stale one.
+			//
+			// "Has a clearing cell" alone still wasn't enough (diagnosed live): the STAGE CLEAR box
+			// draws in from the *bottom* of the bottle upward, so a single frame can show real "O"
+			// rings further up while cells nearer the bottom are already covered and reading as
+			// 'unknown' -- the same frame that has the rings we want can already be partway
+			// corrupted. CLEARING_MAX_UNKNOWN_CELLS requires the frame to also be mostly free of
+			// 'unknown' cells, not just contain a ring somewhere -- the Mario victory pose that
+			// eventually appears as the box keeps growing covers (at least) 4 cells along the
+			// bottom row on its own, so staying strictly below that leaves a little leeway for
+			// incidental noise while still landing on a frame from before that particular artifact.
+			const CLEARING_MAX_UNKNOWN_CELLS = 3;
 			const lastClearingBoard = { '1p': null, '2p': null };
 
 			function recordBoardHistory(playerKey, board) {
@@ -687,7 +698,12 @@
 				history.push(board);
 				if (history.length > BOARD_HISTORY_SIZE) history.shift();
 
-				if (board.some(row => row.some(cell => cell?.type === 'clearing'))) {
+				const cells = board.flat();
+				const hasClearing = cells.some(cell => cell?.type === 'clearing');
+				const unknownCount = cells.filter(
+					cell => cell?.type === 'unknown'
+				).length;
+				if (hasClearing && unknownCount < CLEARING_MAX_UNKNOWN_CELLS) {
 					lastClearingBoard[playerKey] = board;
 				}
 			}
