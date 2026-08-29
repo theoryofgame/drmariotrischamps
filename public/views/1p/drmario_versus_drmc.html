@@ -660,53 +660,46 @@
 			// of the bottle for a few frames before result actually leaves 'playing'. For topout/
 			// game_over there's no better signal than "how many frames back", tuned per outcome
 			// from live reports (topout's own result box is small and doesn't cover the board the
-			// way stage_clear's/game_over's do -- see ResultOCR.js's own docs -- so it needs much
-			// less correcting for, or none). stage_clear is different: RoundTracker's own
-			// virus_cleared event already reports the *exact* frame the virus count reaches 0 --
-			// the real moment the stage is cleared, well before ResultOCR confirms it and any
-			// celebration pose has a chance to appear -- so rather than guess a frame count for it,
-			// stageClearBoard below captures the board directly at that moment and this uses it in
-			// preference to the lookback table whenever it's available (it won't be for the synced
-			// side unless that bottle also happened to clear its own viruses, in which case the
-			// lookback table remains the fallback).
+			// way stage_clear's/game_over's do -- see ResultOCR.js's own docs -- so it needs far
+			// less correcting for).
 			const BOARD_LOOKBACK_FRAMES = {
-				topout: 0,
-				stage_clear: 4,
+				topout: 1,
 				game_over: 4,
 			};
 			const DEFAULT_BOARD_LOOKBACK_FRAMES = 2;
 			const BOARD_HISTORY_SIZE =
 				Math.max(...Object.values(BOARD_LOOKBACK_FRAMES)) + 1;
 			const boardHistory = { '1p': [], '2p': [] };
-			const stageClearBoard = { '1p': null, '2p': null };
+
+			// stage_clear gets a more precise fix than a guessed lookback: templates.js's
+			// 'clearing' cell type (a hollow ring, replacing whatever virus/pill was there) is
+			// exactly the on-screen "O" animation for a match clearing, read directly off the
+			// board by identifyCell() -- no separate signal to time against, just remember the
+			// last frame (while the round is still live) that actually had one. Since nothing else
+			// can happen in the bottle after the stage-clearing match but the round ending, the
+			// last such frame recorded is guaranteed to be *that* match, not an earlier ordinary
+			// one during ordinary play. Reset alongside boardHistory below (round_start,
+			// resetMatchState) so a new round doesn't inherit a stale one.
+			const lastClearingBoard = { '1p': null, '2p': null };
 
 			function recordBoardHistory(playerKey, board) {
 				const history = boardHistory[playerKey];
 				history.push(board);
 				if (history.length > BOARD_HISTORY_SIZE) history.shift();
-			}
 
-			trackers.player1.addEventListener('virus_cleared', e => {
-				if (e.detail.virusCount === 0) {
-					const history = boardHistory['1p'];
-					stageClearBoard['1p'] = history[history.length - 1] ?? null;
+				if (board.some(row => row.some(cell => cell?.type === 'clearing'))) {
+					lastClearingBoard[playerKey] = board;
 				}
-			});
-			trackers.player2.addEventListener('virus_cleared', e => {
-				if (e.detail.virusCount === 0) {
-					const history = boardHistory['2p'];
-					stageClearBoard['2p'] = history[history.length - 1] ?? null;
-				}
-			});
+			}
 
 			function freezeOnEarlierBoard(playerKey, outcome) {
 				if (
 					realOutcomeOf(outcome) === 'stage_clear' &&
-					stageClearBoard[playerKey]
+					lastClearingBoard[playerKey]
 				) {
 					renderBoard(
 						document.getElementById(`board-${playerKey}`),
-						stageClearBoard[playerKey]
+						lastClearingBoard[playerKey]
 					);
 					return;
 				}
@@ -744,6 +737,27 @@
 			// is an unambiguous signal to unlock everything for the next match.
 			let matchOver = false;
 
+			// matchOver alone still left a gap (reported live: the frozen view visibly changed
+			// again after correctly freezing, for both a match-ending game_over *and*, less
+			// obviously, a match-ending stage_clear/topout): the spurious 'playing' misread above
+			// can happen *before* crown count has caught up to reflect the match actually being
+			// over, since the OCR's crown-grid read and each bottle's own result-screen read don't
+			// update in lockstep (the same category of desync RoundTracker.js's own header comment
+			// documents elsewhere). Rather than guess which specific outcome needs the crown-timing
+			// workaround, ROUND_END_GRACE_MS blocks round_start unconditionally for a short window
+			// after *any* round_end, regardless of outcome or whether matchOver has caught up yet --
+			// a real next round (match-ending or not) always takes noticeably longer than this to
+			// actually begin, so this only ever filters out the brief transition-frame glitch, not
+			// legitimate round starts.
+			const ROUND_END_GRACE_MS = 1500;
+			const roundEndedAt = { '1p': 0, '2p': 0 };
+
+			function isFreezeLocked(playerKey) {
+				return (
+					matchOver || Date.now() - roundEndedAt[playerKey] < ROUND_END_GRACE_MS
+				);
+			}
+
 			function resetMatchState() {
 				matchOver = false;
 				['1p', '2p'].forEach(playerKey => {
@@ -751,7 +765,7 @@
 					lastOutcome[playerKey] = null;
 					latestSnapshot[playerKey] = null;
 					boardHistory[playerKey] = [];
-					stageClearBoard[playerKey] = null;
+					lastClearingBoard[playerKey] = null;
 					updateFreezeOverlay(playerKey);
 				});
 			}
@@ -770,28 +784,30 @@
 
 			trackers.player1.addEventListener('round_end', e => {
 				roundEnded['1p'] = true;
+				roundEndedAt['1p'] = Date.now();
 				lastOutcome['1p'] = e.detail.outcome;
 				freezeOnEarlierBoard('1p', e.detail.outcome);
 				updateFreezeOverlay('1p');
 			});
 			trackers.player1.addEventListener('round_start', () => {
-				if (matchOver) return;
+				if (isFreezeLocked('1p')) return;
 				roundEnded['1p'] = false;
 				boardHistory['1p'] = [];
-				stageClearBoard['1p'] = null;
+				lastClearingBoard['1p'] = null;
 				updateFreezeOverlay('1p');
 			});
 			trackers.player2.addEventListener('round_end', e => {
 				roundEnded['2p'] = true;
+				roundEndedAt['2p'] = Date.now();
 				lastOutcome['2p'] = e.detail.outcome;
 				freezeOnEarlierBoard('2p', e.detail.outcome);
 				updateFreezeOverlay('2p');
 			});
 			trackers.player2.addEventListener('round_start', () => {
-				if (matchOver) return;
+				if (isFreezeLocked('2p')) return;
 				roundEnded['2p'] = false;
 				boardHistory['2p'] = [];
-				stageClearBoard['2p'] = null;
+				lastClearingBoard['2p'] = null;
 				updateFreezeOverlay('2p');
 			});
 
@@ -839,7 +855,12 @@
 			}
 
 			function renderStats(playerKey, s) {
-				if (matchOver) return; // freeze the snapshot exactly as it was at match end
+				// isFreezeLocked, not just matchOver -- see its own comment. A spurious round_start
+				// slipping through this same gap would have reset LiveMetrics' own counters
+				// regardless of what this view does with roundEnded, so latestSnapshot needs the
+				// identical guard or the frozen recap's numbers could still drift even with the
+				// board itself correctly held in place.
+				if (isFreezeLocked(playerKey)) return;
 				latestSnapshot[playerKey] = s;
 				renderSideBox(playerKey, s);
 				updateFreezeOverlay(playerKey);
