@@ -4,7 +4,13 @@ import path from 'path';
 import { PNG } from 'pngjs';
 import { fileURLToPath } from 'url';
 
-import { readNumber, readSpeed } from '../public/producer/drmario/PanelOCR.js';
+import {
+	readNumber,
+	readSpeed,
+	readNumberDebug,
+	readSpeedDebug,
+	digitsToValue,
+} from '../public/producer/drmario/PanelOCR.js';
 import { REFERENCE_LOCATIONS } from '../public/producer/drmario/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -83,6 +89,64 @@ describe('DrMarioPanelOCR', () => {
 			expect(readSpeed(frameA, REFERENCE_LOCATIONS.speed)).toBe('med');
 			expect(readSpeed(level05HiSpeed, REFERENCE_LOCATIONS.speed)).toBe('hi');
 			expect(readSpeed(level19Low, REFERENCE_LOCATIONS.speed)).toBe('low');
+		});
+	});
+
+	// Debug variants exist purely for the calibration UI's own diagnostics (see producer.js) --
+	// readNumber()/readSpeed() above are themselves built directly on these, so a passing clean
+	// read here is already covered by every test above; what's worth checking directly is the
+	// debug-specific shape and the distance-0/bestGuess-matches-value case on an unambiguous read.
+	describe('readNumberDebug / digitsToValue', () => {
+		it('returns one entry per digit, each with value/distance/bestGuess, on a clean read', () => {
+			const digits = readNumberDebug(level05HiSpeed, REFERENCE_LOCATIONS.level);
+
+			expect(digits).toHaveLength(2);
+			digits.forEach(d => {
+				expect(d.distance).toBe(0);
+				expect(d.value).toBe(d.bestGuess);
+			});
+			expect(digitsToValue(digits)).toBe(5);
+		});
+
+		it('digitsToValue mirrors readNumber() exactly on the same input', () => {
+			const digits = readNumberDebug(level19Low, REFERENCE_LOCATIONS.score);
+			expect(digitsToValue(digits)).toBe(
+				readNumber(level19Low, REFERENCE_LOCATIONS.score)
+			);
+		});
+
+		it('digitsToValue returns null if any digit slot failed to match confidently', () => {
+			// an unreasonably strict maxDistance forces every digit to "fail" even on a clean
+			// capture, so digitsToValue must bail out to null rather than assembling a bogus value
+			// from whatever bestGuess happened to be closest.
+			const digits = readNumberDebug(level13Low, REFERENCE_LOCATIONS.virus, {
+				maxDistance: -1,
+			});
+
+			expect(digits.some(d => d.value === null)).toBe(true);
+			expect(digitsToValue(digits)).toBeNull();
+			// bestGuess should still reflect the real closest template even though it was rejected
+			expect(digits[0].bestGuess).not.toBeNull();
+		});
+	});
+
+	describe('readSpeedDebug', () => {
+		it('returns value/distance/bestGuess, with distance 0 on a clean read', () => {
+			const debug = readSpeedDebug(level05HiSpeed, REFERENCE_LOCATIONS.speed);
+
+			expect(debug.value).toBe('hi');
+			expect(debug.distance).toBe(0);
+			expect(debug.bestGuess).toBe('hi');
+		});
+
+		it('still reports a bestGuess when rejected by an unreasonably strict maxDistance', () => {
+			const debug = readSpeedDebug(level05HiSpeed, REFERENCE_LOCATIONS.speed, {
+				maxDistance: -1,
+			});
+
+			expect(debug.value).toBeNull();
+			expect(debug.bestGuess).toBe('hi');
+			expect(debug.distance).toBe(0);
 		});
 	});
 });

@@ -59,7 +59,12 @@ function sampleDominantColor(trimmedGrid) {
 // relative to the ~25-45 lit pixels a typical template has; a genuine match against a clean
 // capture should score 0, this mainly guards against capture noise once this module is wired
 // into a real (noisy) video pipeline rather than the clean emulator captures it was built from.
-const DEFAULT_MAX_DISTANCE = 6;
+// Raised from an initial 6 after a real remote/Twitch-relayed capture (confirmed correctly
+// calibrated -- the bottle's own walls landed within 1 reference pixel of FIELD) still showed
+// widespread 'unknown' cells, concentrated in recently-active board regions (a fresh spawn, a
+// piece mid-fall) rather than long-settled ones -- consistent with video compression allocating
+// fewer bits to fast-changing content than to static, already-converged regions.
+const DEFAULT_MAX_DISTANCE = 12;
 
 // Core matcher, shared by identifyCell() (an 8x16 grid position inside the bottle) and
 // identifyNextPill() (a fixed screen position that isn't part of that grid at all -- the pill

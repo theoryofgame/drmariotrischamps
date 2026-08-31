@@ -6,25 +6,37 @@
 // for TetrisOCR's per-task packing canvas -- one canvas, normalized to REFERENCE_SIZE, is
 // sampled directly by the same pure functions the offline tests use.
 //
-// Calibration is deliberately minimal for now: a single axis-aligned crop rectangle (in source
-// video pixel coordinates) that maps onto the 256x224 reference frame, set via setCalibration().
-// It does not (yet) handle skew/rotation the way the Tetris OCR's calibration UI does for
-// capture-card artifacts -- if real capture footage needs that, it'll need building out later.
+// Calibration: versus mode (unchanged, deferred -- see CLAUDE.md) still uses a single
+// axis-aligned crop rectangle (source video pixels -> the 256x224 reference frame). Single-player
+// instead captures each of CALIBRATION_REGIONS independently -- see constants.js's own comment
+// for why (ported from the existing Tetris OCR's own per-task-canvas model after a real remote/
+// Twitch-relayed capture showed a single shared transform can't represent a non-uniformly cropped
+// source). The whole-screen rect is still captured too, even in single-player: isTitleScreen()
+// needs a genuine whole-screen anchor (no bottle exists on the title screen to be field-relative
+// to), and it's also the "quick seed" derivation's source (see producer.js) and what
+// getReferenceCanvas() still shows for a coarse, whole-picture sanity check.
 
 import {
 	REFERENCE_SIZE,
 	LAYOUT,
 	CONFIGS,
-	FIELD,
-	REFERENCE_LOCATIONS,
 	REFERENCE_LOCATIONS_VERSUS,
 	VERSUS,
+	CALIBRATION_REGIONS,
 } from './constants.js';
 import { scanBoard, identifyNextPill } from './BoardOCR.js';
-import { readNumber, readSpeed } from './PanelOCR.js';
+import {
+	readNumberDebug,
+	readSpeedDebug,
+	digitsToValue,
+	readNumber,
+	readSpeed,
+} from './PanelOCR.js';
 import { readCrowns } from './CrownOCR.js';
 import { readResult } from './ResultOCR.js';
 import { hasBottle, isTitleScreen } from './ScreenOCR.js';
+
+const REGION_NAMES = Object.keys(CALIBRATION_REGIONS);
 
 export class DrMarioOCR extends EventTarget {
 	constructor(config) {
@@ -40,6 +52,32 @@ export class DrMarioOCR extends EventTarget {
 		});
 		this.reference_ctx.imageSmoothingEnabled = false; // preserve crisp NES pixel edges when scaling
 
+		// One small canvas per independently-calibrated single-player region (see constants.js's
+		// CALIBRATION_REGIONS) -- created once, redrawn every frame, exposed via getRegionCanvas()
+		// the same way getReferenceCanvas() already exposes the whole-screen one.
+		this.region_canvases = {};
+		this.region_ctxs = {};
+		REGION_NAMES.forEach(name => {
+			const { size } = CALIBRATION_REGIONS[name];
+			const canvas = document.createElement('canvas');
+			canvas.width = size.w;
+			canvas.height = size.h;
+			const ctx = canvas.getContext('2d', {
+				alpha: false,
+				willReadFrequently: true,
+			});
+			ctx.imageSmoothingEnabled = false;
+			this.region_canvases[name] = canvas;
+			this.region_ctxs[name] = ctx;
+		});
+
+		// Single-player only -- the last frame's panel-field diagnostics (readNumberDebug()/
+		// readSpeedDebug() results for top/score/level/virus/speed), exposed via
+		// getLastPanelDebug() for the calibration UI. Not part of the broadcast frame itself
+		// (result only carries the plain values) since this is only ever useful locally, while
+		// setting up -- see getLastPanelDebug()'s own comment.
+		this.last_panel_debug = null;
+
 		this.setConfig(config);
 	}
 
@@ -54,48 +92,76 @@ export class DrMarioOCR extends EventTarget {
 		this.setCalibration(config.calibration);
 	}
 
-	// { x, y, w, h } in source video pixel coordinates, i.e. the rectangle of the captured video
-	// that shows the NES's 256x224 screen. null means "not calibrated yet" -- processVideoFrame()
-	// is then a no-op, same as a producer with no capture region configured.
+	// { screen, regions }. screen: { x, y, w, h } in source video pixel coordinates, the whole NES
+	// 256x224 screen -- used by both layouts for isTitleScreen() (no bottle exists on the title
+	// screen to be field-relative to) and by single-player as the "quick seed" source (see
+	// producer.js) and what getReferenceCanvas() shows. regions: single-player only, one
+	// { x, y, w, h } per CALIBRATION_REGIONS key, in source video pixel coordinates, each
+	// independently capturing just that region instead of being read as a fixed offset within the
+	// whole-screen capture -- see constants.js's own comment for why. null (the whole object, or
+	// an individual region) means "not calibrated yet" -- processVideoFrame() is then a no-op for
+	// whatever it's missing, same as a producer with no capture region configured.
 	setCalibration(calibration) {
 		this.calibration = calibration ?? null;
 	}
 
-	// Exposes the normalized frame this OCR actually reads from, so a calibration UI can display
-	// it directly for feedback (see harness.js) instead of recomputing the same crop separately.
+	// Exposes the normalized whole-screen frame, so a calibration UI can display it directly for
+	// feedback (see harness.js/producer.js) instead of recomputing the same crop separately.
 	getReferenceCanvas() {
 		return this.reference_canvas;
 	}
 
-	processVideoFrame(frame) {
-		if (!this.calibration) return null;
+	// Single-player only -- exposes one independently-calibrated region's own captured canvas, for
+	// the same reason getReferenceCanvas() exposes the whole-screen one: so the calibration UI can
+	// show exactly what a region is capturing without recomputing the crop itself.
+	getRegionCanvas(name) {
+		return this.region_canvases[name];
+	}
 
-		const { video, videoFrame } = frame;
-		const { x, y, w, h } = this.calibration;
+	// Single-player only -- { top, score, level, virus, speed }, each a readNumberDebug()/
+	// readSpeedDebug() result (top/score/level/virus: an array, one entry per digit; speed: a
+	// single { value, distance, bestGuess }) from the most recent frame, for a calibration UI to
+	// show *why* a field isn't reading (which digit, how close the nearest template actually
+	// was) instead of just that it isn't -- see producer.js. null until the first frame with every
+	// region calibrated has been processed.
+	getLastPanelDebug() {
+		return this.last_panel_debug;
+	}
 
-		this.reference_ctx.drawImage(
-			videoFrame || video,
-			x,
-			y,
-			w,
-			h,
+	#drawAndSample(source, rect, ctx, targetSize) {
+		ctx.drawImage(
+			source,
+			rect.x,
+			rect.y,
+			rect.w,
+			rect.h,
 			0,
 			0,
-			REFERENCE_SIZE.w,
-			REFERENCE_SIZE.h
+			targetSize.w,
+			targetSize.h
 		);
 
-		const imageData = this.reference_ctx.getImageData(
-			0,
-			0,
-			REFERENCE_SIZE.w,
-			REFERENCE_SIZE.h
-		);
-		const image = {
+		const imageData = ctx.getImageData(0, 0, targetSize.w, targetSize.h);
+
+		return {
 			width: imageData.width,
 			height: imageData.height,
 			data: imageData.data,
 		};
+	}
+
+	processVideoFrame(frame) {
+		if (!this.calibration?.screen) return null;
+
+		const { video, videoFrame } = frame;
+		const source = videoFrame || video;
+
+		const image = this.#drawAndSample(
+			source,
+			this.calibration.screen,
+			this.reference_ctx,
+			REFERENCE_SIZE
+		);
 
 		// Whole-screen fact, not a per-bottle one, but attached to each per-bottle shape below (the
 		// same way hasBottle is) so RoundTracker -- which only ever sees one bottle's frames --
@@ -106,7 +172,7 @@ export class DrMarioOCR extends EventTarget {
 		const result =
 			this.layout === LAYOUT.VERSUS
 				? this.#scanVersus(image, titleScreen)
-				: this.#scanSinglePlayer(image, titleScreen);
+				: this.#scanSinglePlayer(source, titleScreen);
 
 		this.dispatchEvent(new CustomEvent('frame', { detail: result }));
 
@@ -134,8 +200,85 @@ export class DrMarioOCR extends EventTarget {
 		return { hasBottle: true, result: readResult(image, field) };
 	}
 
-	#scanSinglePlayer(image, titleScreen) {
-		const bottle = this.#scanBottle(image, FIELD);
+	// Captures every CALIBRATION_REGIONS entry independently from the raw source (see
+	// constants.js's own comment on why -- a single shared whole-screen capture can't represent a
+	// non-uniformly cropped source). Returns null for any region not yet calibrated.
+	#captureRegions(source) {
+		const images = {};
+
+		REGION_NAMES.forEach(name => {
+			const rect = this.calibration.regions?.[name];
+			images[name] = rect
+				? this.#drawAndSample(
+						source,
+						rect,
+						this.region_ctxs[name],
+						CALIBRATION_REGIONS[name].size
+					)
+				: null;
+		});
+
+		return images;
+	}
+
+	#scanSinglePlayer(source, titleScreen) {
+		const regions = this.#captureRegions(source);
+
+		// Not fully calibrated yet -- same "no-op" shape a producer with no capture region
+		// configured already gets, just per-field instead of all-or-nothing.
+		if (REGION_NAMES.some(name => !regions[name])) {
+			this.last_panel_debug = null;
+
+			return {
+				layout: LAYOUT.SINGLE_PLAYER,
+				isTitleScreen: titleScreen,
+				hasBottle: false,
+				result: null,
+				board: null,
+				nextPill: null,
+				level: null,
+				virus: null,
+				speed: null,
+				top: null,
+				score: null,
+			};
+		}
+
+		// Computed (and diagnostics stashed) regardless of hasBottle below -- these regions are
+		// captured independently of the field/bottle one, so a calibration UI can debug them even
+		// while there's no bottle on screen at all (paused on a menu, say) to look at otherwise.
+		const topDebug = readNumberDebug(
+			regions.top,
+			CALIBRATION_REGIONS.top.local
+		);
+		const scoreDebug = readNumberDebug(
+			regions.score,
+			CALIBRATION_REGIONS.score.local
+		);
+		const levelDebug = readNumberDebug(
+			regions.level,
+			CALIBRATION_REGIONS.level.local
+		);
+		const virusDebug = readNumberDebug(
+			regions.virus,
+			CALIBRATION_REGIONS.virus.local
+		);
+		const speedDebug = readSpeedDebug(
+			regions.speed,
+			CALIBRATION_REGIONS.speed.local
+		);
+
+		this.last_panel_debug = {
+			top: topDebug,
+			score: scoreDebug,
+			level: levelDebug,
+			virus: virusDebug,
+			speed: speedDebug,
+		};
+
+		const fieldImage = regions.field;
+		const fieldLocal = CALIBRATION_REGIONS.field.local;
+		const bottle = this.#scanBottle(fieldImage, fieldLocal);
 
 		if (!bottle.hasBottle) {
 			return {
@@ -151,13 +294,15 @@ export class DrMarioOCR extends EventTarget {
 			layout: LAYOUT.SINGLE_PLAYER,
 			isTitleScreen: titleScreen,
 			...bottle,
-			board: scanBoard(image),
-			nextPill: identifyNextPill(image),
-			top: readNumber(image, REFERENCE_LOCATIONS.top),
-			score: readNumber(image, REFERENCE_LOCATIONS.score),
-			level: readNumber(image, REFERENCE_LOCATIONS.level),
-			virus: readNumber(image, REFERENCE_LOCATIONS.virus),
-			speed: readSpeed(image, REFERENCE_LOCATIONS.speed),
+			board: scanBoard(fieldImage, { field: fieldLocal }),
+			nextPill: identifyNextPill(regions.next_pill, {
+				position: CALIBRATION_REGIONS.next_pill.local,
+			}),
+			top: digitsToValue(topDebug),
+			score: digitsToValue(scoreDebug),
+			level: digitsToValue(levelDebug),
+			virus: digitsToValue(virusDebug),
+			speed: speedDebug.value,
 		};
 	}
 

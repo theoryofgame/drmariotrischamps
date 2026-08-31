@@ -108,7 +108,10 @@ const SPAWN_COL_RIGHT = COLS / 2;
 // row, so anything appearing here can only be real descent.
 const DESCENT_ROW_START = 1;
 
-function virusTarget(level) {
+// Exported so SpeedRunTracker.js can compute virus targets for levels a player hasn't reached
+// yet (already known from the configured level set alone, without having actually played them)
+// using the exact same formula, rather than duplicating it.
+export function virusTarget(level) {
 	return level === null || level === undefined
 		? null
 		: Math.min(4 * (level + 1), MAX_VIRUS_COUNT);

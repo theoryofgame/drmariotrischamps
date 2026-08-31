@@ -32,6 +32,44 @@
 				image-rendering: pixelated;
 				border: 1px solid #444;
 			}
+			#region-calibration {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 16px;
+				margin-top: 12px;
+			}
+			.region-box {
+				border: 1px solid #444;
+				border-radius: 4px;
+				padding: 8px;
+			}
+			.region-box h4 {
+				margin: 0 0 6px 0;
+				font-size: 0.9rem;
+			}
+			.region-preview-holder {
+				background: #000;
+				border: 1px solid #333;
+				display: inline-block;
+				margin-bottom: 6px;
+				overflow: hidden;
+			}
+			.region-preview-holder canvas {
+				image-rendering: pixelated;
+				display: block;
+			}
+			.region-box input[type='number'] {
+				width: 48px;
+			}
+			.region-debug {
+				font-family: monospace;
+				font-size: 0.75rem;
+				color: #999;
+				margin-top: 4px;
+			}
+			.region-debug .miss {
+				color: #f66;
+			}
 			.board-grid {
 				display: grid;
 				gap: 1px;
@@ -69,6 +107,7 @@
 			#broadcast-section input[type='text'] {
 				width: 280px;
 			}
+			#single-player-name-section input[type='text'],
 			#player-names-section input[type='text'],
 			#event-info-section input[type='text'] {
 				width: 140px;
@@ -105,10 +144,11 @@
 	<body>
 		<h1>Dr. Mario Producer</h1>
 		<p class="hint">
-			Captures a Dr. Mario feed and streams it to the server for broadcast.
-			Single-player is "non-networked" only so far -- one producer, one private
-			room, no match-room/head-to-head support yet. See CLAUDE.md for the rest
-			of the roadmap.
+			Captures a Dr. Mario feed and streams it to the server for broadcast. This
+			page works the same way whether you're broadcasting solo or racing in
+			Speed mode -- Speed attachment is configured entirely by the race admin
+			elsewhere, nothing to set up here. See CLAUDE.md for the rest of the
+			roadmap.
 		</p>
 
 		<section id="controls">
@@ -122,6 +162,21 @@
 			<select id="devices"></select>
 			<button id="use-camera">Use Camera</button>
 			<button id="use-screen">Use Screen/Window Capture</button>
+		</section>
+
+		<section id="single-player-name-section">
+			<h3>Player name</h3>
+			<p class="hint">
+				Shown wherever this broadcast's player name is displayed (e.g. Speed
+				mode's view). Saved automatically.
+			</p>
+			<label for="single-player-name">Name</label>
+			<input
+				id="single-player-name"
+				type="text"
+				placeholder="Player 1"
+				autocomplete="off"
+			/>
 		</section>
 
 		<section id="player-names-section">
@@ -168,11 +223,30 @@
 		</section>
 
 		<section id="calibration-section">
-			<h3>1. Calibrate</h3>
+			<h3>1. Quick seed</h3>
 			<p class="hint">
-				Click the top-left corner of the NES screen in the preview below, then
-				click the bottom-right corner. Fine-tune with the fields if needed.
-				Saved automatically.
+				Single-player only: the bottle, next-pill preview, and TOP/SCORE/LEVEL/
+				SPEED/VIRUS panels are each captured and calibrated independently below
+				(step 2) -- different remote captures can crop or letterbox the screen
+				inconsistently (extra overscan rows, a template that crops tighter at
+				the bottom, etc.), so no single whole-screen rectangle can reliably
+				locate all of them at once. This step just gives every region below a
+				reasonable starting value in one click, which you can then fix up
+				individually where it's actually off.
+			</p>
+			<label for="calibration-target">Click target</label>
+			<select id="calibration-target">
+				<option value="bottle">Bottle interior (recommended)</option>
+				<option value="screen">Whole screen</option>
+			</select>
+			<p class="hint" id="calibration-hint"></p>
+			<p class="hint">
+				<span style="color: #0f0">Green box</span>: the calibrated whole screen
+				(used only to detect the title screen, and as this quick-seed's source).
+				<span style="color: #ff0">Yellow box</span>: the bottle/field region's
+				current calibration (see step 2) -- it should hug the cyan walls snugly;
+				if it doesn't once you've quick-seeded, fix it directly in its own box
+				below rather than re-clicking here.
 			</p>
 			<canvas id="preview-canvas"></canvas>
 			<div>
@@ -180,7 +254,18 @@
 				<label for="cal-y">Y</label><input id="cal-y" type="number" />
 				<label for="cal-w">W</label><input id="cal-w" type="number" />
 				<label for="cal-h">H</label><input id="cal-h" type="number" />
-				<button id="cal-reset">Reset</button>
+				<button id="cal-reset">Reset all</button>
+			</div>
+
+			<div id="region-finetune-section">
+				<h3>2. Fine-tune each region (single-player only)</h3>
+				<p class="hint">
+					Each box shows exactly what that region currently captures
+					(post-margin for the bottle, at its real working size) -- adjust a
+					region's own X/Y/W/H directly if it looks wrong; this never affects
+					any other region. Saved automatically.
+				</p>
+				<div id="region-calibration"></div>
 			</div>
 		</section>
 

@@ -73,6 +73,146 @@ export const REFERENCE_LOCATIONS = {
 	},
 };
 
+// Single-player-only independent per-region calibration (see DrMarioOCR.js) -- each region below
+// is captured from its own video-pixel crop and resampled to its own fixed `size`, regardless of
+// that raw crop's own pixel dimensions, rather than being read as a fixed offset within one
+// shared 256x224 frame the way REFERENCE_LOCATIONS above still describes. This directly mirrors
+// the existing Tetris OCR's own per-task canvas + fixed target resolution, which is what actually
+// absorbs a given capture's own overscan/cropping quirks without requiring every other region to
+// match -- confirmed by researching its actual implementation (cpuTetrisOCR.js/TASK_RESIZE), not
+// just this file's own REFERENCE_LOCATIONS precedent.
+//
+// `refPoint`/`size` describe each region's position/size in the *old* shared 256x224 frame --
+// used only once, as the "quick seed" derivation's extrapolation anchor when the operator clicks
+// the whole screen (or the bottle -- see producer.js's calibrationFromBottleRect()) instead of
+// clicking each region individually; never consulted again at read time. `next_pill` deliberately
+// uses `CELL_SIZE * 2` (16px) here, not REFERENCE_LOCATIONS.next_pill.crop.w (15px, informational
+// only there -- identifyNextPill() ignores it and always steps by CELL_SIZE) -- 15px would clip
+// the last column of the right-hand tile's own capture.
+//
+// `field` alone needs a margin beyond the bare playfield interior: ScreenOCR.hasBottle()'s wall-
+// check points reach outside it (~9px left / ~8px right of field.x/field.x+field.w, confirmed
+// against its own LEFT_WALL_OFFSET/RIGHT_WALL_OFFSET_X_PAD/WALL_SAMPLE_RADIUS), while ResultOCR's
+// own RESULT_BOX_OFFSET/TOPOUT_OFFSET are both confirmed to stay entirely within the interior's
+// own bounds. FIELD_MARGIN is comfortably generous relative to that measured ~9px/~8px need.
+export const FIELD_MARGIN = 12;
+
+export const CALIBRATION_REGIONS = {
+	field: {
+		refPoint: { x: FIELD.x - FIELD_MARGIN, y: FIELD.y - FIELD_MARGIN },
+		size: { w: FIELD.w + FIELD_MARGIN * 2, h: FIELD.h + FIELD_MARGIN * 2 },
+		// the true playfield interior's own position within its own margin-padded captured
+		// canvas -- what BoardOCR/ScreenOCR/ResultOCR get called with instead of today's FIELD.
+		local: { x: FIELD_MARGIN, y: FIELD_MARGIN, w: FIELD.w, h: FIELD.h },
+	},
+	next_pill: {
+		refPoint: { x: NEXT_PILL.x, y: NEXT_PILL.y },
+		size: { w: CELL_SIZE * 2, h: 7 },
+		local: { x: 0, y: 0 },
+	},
+	// top/score/level/virus/speed's `local` nests coordinates under `crop` (rather than flat
+	// x/y/w/h like field/next_pill above) because that's the shape PanelOCR.readNumber()/
+	// readSpeed() actually take (`location.crop.x`/etc, `location.pattern`) -- matching
+	// REFERENCE_LOCATIONS' own existing shape exactly, just with crop.x/y zeroed to be local to
+	// this region's own captured canvas instead of an offset into the shared 256x224 frame.
+	top: {
+		refPoint: {
+			x: REFERENCE_LOCATIONS.top.crop.x,
+			y: REFERENCE_LOCATIONS.top.crop.y,
+		},
+		size: {
+			w: REFERENCE_LOCATIONS.top.crop.w,
+			h: REFERENCE_LOCATIONS.top.crop.h,
+		},
+		local: {
+			crop: {
+				x: 0,
+				y: 0,
+				w: REFERENCE_LOCATIONS.top.crop.w,
+				h: REFERENCE_LOCATIONS.top.crop.h,
+			},
+			pattern: REFERENCE_LOCATIONS.top.pattern,
+		},
+	},
+	score: {
+		refPoint: {
+			x: REFERENCE_LOCATIONS.score.crop.x,
+			y: REFERENCE_LOCATIONS.score.crop.y,
+		},
+		size: {
+			w: REFERENCE_LOCATIONS.score.crop.w,
+			h: REFERENCE_LOCATIONS.score.crop.h,
+		},
+		local: {
+			crop: {
+				x: 0,
+				y: 0,
+				w: REFERENCE_LOCATIONS.score.crop.w,
+				h: REFERENCE_LOCATIONS.score.crop.h,
+			},
+			pattern: REFERENCE_LOCATIONS.score.pattern,
+		},
+	},
+	level: {
+		refPoint: {
+			x: REFERENCE_LOCATIONS.level.crop.x,
+			y: REFERENCE_LOCATIONS.level.crop.y,
+		},
+		size: {
+			w: REFERENCE_LOCATIONS.level.crop.w,
+			h: REFERENCE_LOCATIONS.level.crop.h,
+		},
+		local: {
+			crop: {
+				x: 0,
+				y: 0,
+				w: REFERENCE_LOCATIONS.level.crop.w,
+				h: REFERENCE_LOCATIONS.level.crop.h,
+			},
+			pattern: REFERENCE_LOCATIONS.level.pattern,
+		},
+	},
+	virus: {
+		refPoint: {
+			x: REFERENCE_LOCATIONS.virus.crop.x,
+			y: REFERENCE_LOCATIONS.virus.crop.y,
+		},
+		size: {
+			w: REFERENCE_LOCATIONS.virus.crop.w,
+			h: REFERENCE_LOCATIONS.virus.crop.h,
+		},
+		local: {
+			crop: {
+				x: 0,
+				y: 0,
+				w: REFERENCE_LOCATIONS.virus.crop.w,
+				h: REFERENCE_LOCATIONS.virus.crop.h,
+			},
+			pattern: REFERENCE_LOCATIONS.virus.pattern,
+		},
+	},
+	speed: {
+		refPoint: {
+			x: REFERENCE_LOCATIONS.speed.crop.x,
+			y: REFERENCE_LOCATIONS.speed.crop.y,
+		},
+		size: {
+			w: REFERENCE_LOCATIONS.speed.crop.w,
+			h: REFERENCE_LOCATIONS.speed.crop.h,
+		},
+		local: {
+			crop: {
+				x: 0,
+				y: 0,
+				w: REFERENCE_LOCATIONS.speed.crop.w,
+				h: REFERENCE_LOCATIONS.speed.crop.h,
+			},
+			kind: REFERENCE_LOCATIONS.speed.kind,
+			values: REFERENCE_LOCATIONS.speed.values,
+		},
+	},
+};
+
 // Versus-mode geometry, measured off tests/fixtures/dr_mario/versus_reference.png the same way
 // everything above was measured off single-player captures. Both bottles use the exact same
 // y/h as single-player's FIELD (the neck-to-body transition and bottle floor haven't moved),

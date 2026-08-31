@@ -3,6 +3,7 @@ import PrivateRoom from './PrivateRoom.js';
 import MatchRoom from './MatchRoom.js';
 import Producer from './Producer.js';
 import DrMarioProducer from './DrMarioProducer.js';
+import DrMarioSpeedRoom from './DrMarioSpeedRoom.js';
 
 // Twitch stuff
 import { RefreshingAuthProvider } from '@twurple/auth';
@@ -47,6 +48,14 @@ class User extends EventEmitter {
 		// only ever needs a private room, never a match room -- see DrMarioProducer.js.
 		this.drmario_producer = new DrMarioProducer(this);
 		this.drmario_private_room = new PrivateRoom(this);
+
+		// Dr Mario "Speed" mode: eagerly created, same lifetime precedent as host_room/
+		// drmario_private_room, even though most users' rooms will never have a player attached.
+		// See DrMarioSpeedRoom.js for why attachment is admin-driven rather than a "join" flow on
+		// this user's own producer connection.
+		this.drmario_speed_room = new DrMarioSpeedRoom(this);
+		this.drmario_speed_attachment = null; // { room, slot } | null -- set/cleared from the
+		// outside by DrMarioSpeedRoom.setPlayer(), not initiated by this user's own connection
 
 		// match room links this user to the host room of another user
 		this.match_room = null;
@@ -135,6 +144,10 @@ class User extends EventEmitter {
 
 	getDrMarioPrivateRoom() {
 		return this.drmario_private_room;
+	}
+
+	getDrMarioSpeedRoom() {
+		return this.drmario_speed_room;
 	}
 
 	getProducer() {
@@ -286,6 +299,15 @@ class User extends EventEmitter {
 
 	_handleDrMarioProducerMessage(msg) {
 		this.drmario_private_room.handleProducerMessage(this, msg);
+
+		// Optional second forward into a Speed room slot, decided entirely server-side (by
+		// whichever admin has attached this user via DrMarioSpeedRoom.setPlayer()) -- this is the
+		// one line that keeps producer.html untouched for Speed mode, mirroring the existing
+		// Tetris dual-forward above in _handleProducerMessage().
+		if (this.drmario_speed_attachment) {
+			const { room, slot } = this.drmario_speed_attachment;
+			room.handleProducerMessage(slot, this, msg);
+		}
 	}
 
 	_handleProducerClose() {

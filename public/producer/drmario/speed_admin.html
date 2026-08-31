@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Dr. Mario Speed Admin</title>
+		<style>
+			body {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				background: #111;
+				color: #eee;
+				padding: 16px;
+			}
+			h1 {
+				font-size: 1.2rem;
+			}
+			h3 {
+				font-size: 1rem;
+				margin-bottom: 4px;
+			}
+			section {
+				margin-bottom: 20px;
+			}
+			label {
+				margin-right: 4px;
+			}
+			input[type='text'],
+			input[type='number'] {
+				width: 160px;
+			}
+			#header-section input[type='text'] {
+				width: 320px;
+			}
+			.hint {
+				color: #999;
+				font-size: 0.85rem;
+			}
+			.player-row {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				margin-bottom: 8px;
+			}
+			.status-dot {
+				display: inline-block;
+				width: 10px;
+				height: 10px;
+				border-radius: 50%;
+				background: #666;
+			}
+			.status-dot.connected {
+				background: #6f6;
+			}
+			.status-dot.disconnected {
+				background: #f66;
+			}
+			.player-login {
+				color: #ccc;
+				min-width: 120px;
+			}
+			#admin-status {
+				font-weight: bold;
+			}
+			#admin-status.connected {
+				color: #6f6;
+			}
+			#admin-status.disconnected {
+				color: #f66;
+			}
+			#match-state {
+				font-size: 1.1rem;
+				margin-bottom: 8px;
+			}
+			.race-controls button,
+			.match-controls button {
+				margin-right: 8px;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Dr. Mario Speed Admin</h1>
+		<p class="hint">
+			Controls a Speed-mode race: attaches two independent players' existing,
+			unmodified producer broadcasts to race slots, configures the level set and
+			best-of format, and calls race results. This page is never shown on stream
+			-- point the Speed view (drmario_speed.html) at this same account's secret
+			separately for the actual broadcast.
+		</p>
+
+		<section id="admin-connection-section">
+			<h3>1. Connect</h3>
+			<p class="hint">
+				Your own account secret -- this room is owned by whichever account
+				connects here. Saved automatically.
+			</p>
+			<label for="admin-secret">Secret</label>
+			<input id="admin-secret" type="text" autocomplete="off" />
+			<button id="admin-connect">Connect</button>
+			<button id="admin-disconnect">Disconnect</button>
+			<span id="admin-status" class="disconnected">Disconnected</span>
+		</section>
+
+		<section id="players-section">
+			<h3>2. Attach players</h3>
+			<p class="hint">
+				Each player's own account secret (the same one they use for
+				producer.html) -- no coordination needed with them beyond this. Not
+				saved, since these belong to whoever is racing this round.
+			</p>
+			<div class="player-row">
+				<strong>Player 1</strong>
+				<input id="player1-secret" type="text" autocomplete="off" />
+				<button id="player1-attach">Attach</button>
+				<span class="status-dot" id="player1-status"></span>
+				<span class="player-login" id="player1-login"></span>
+			</div>
+			<div class="player-row">
+				<strong>Player 2</strong>
+				<input id="player2-secret" type="text" autocomplete="off" />
+				<button id="player2-attach">Attach</button>
+				<span class="status-dot" id="player2-status"></span>
+				<span class="player-login" id="player2-login"></span>
+			</div>
+		</section>
+
+		<section id="settings-section">
+			<h3>3. Race settings</h3>
+			<label for="bestof-select">Best of</label>
+			<select id="bestof-select">
+				<option value="3">3</option>
+				<option value="5">5</option>
+			</select>
+			<button id="bestof-set">Set</button>
+			<br /><br />
+			<label for="level-start">Start level</label>
+			<input id="level-start" type="number" min="0" value="4" />
+			<label for="level-count">Level count</label>
+			<input id="level-count" type="number" min="1" value="4" />
+			<button id="levelset-set">Set level set</button>
+			<p class="hint">
+				A count of 1 covers a single-level "overtime" race with no other setting
+				to change.
+			</p>
+		</section>
+
+		<section id="header-section">
+			<h3>4. Broadcast header</h3>
+			<p class="hint">
+				Shown at the top of the view in place of a "Best of X -- Race Y"
+				default. Saved to this race, not just this browser -- reopening the
+				admin page (or a fresh view) will show whatever's currently set.
+			</p>
+			<label for="header-text">Header text</label>
+			<input id="header-text" type="text" autocomplete="off" />
+			<button id="header-set">Set</button>
+		</section>
+
+		<section id="match-section">
+			<h3>5. Match state</h3>
+			<div id="match-state">Not connected</div>
+			<div class="race-controls">
+				<button id="player1-wins">Player 1 won this race</button>
+				<button id="player2-wins">Player 2 won this race</button>
+			</div>
+			<br />
+			<div class="match-controls">
+				<button id="player1-reset-run">Reset Player 1's run</button>
+				<button id="player2-reset-run">Reset Player 2's run</button>
+				<button id="reset-match">Reset match</button>
+			</div>
+		</section>
+
+		<script type="module" src="./speed_admin.js"></script>
+	</body>
+</html>

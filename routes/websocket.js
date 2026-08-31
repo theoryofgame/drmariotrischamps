@@ -113,6 +113,48 @@ export default function init(server, wss) {
 			return;
 		}
 
+		// Dr Mario "Speed" mode's admin channel -- distinct from producer/view, mirrors Tetris's
+		// own /ws/room/admin/<secret> pattern. Checked before the producer regex below since that
+		// one is loose enough to otherwise swallow this path too.
+		m = request.nc_url.pathname.match(
+			/^\/ws\/room\/drmario\/speed\/admin\/([a-zA-Z0-9-]+)/
+		);
+
+		request.is_drmario_speed_secret_admin = !!m;
+
+		if (request.is_drmario_speed_secret_admin) {
+			const connecting_user_secret = m[1];
+
+			const connecting_user = await UserDAO.getUserBySecret(
+				connecting_user_secret
+			);
+
+			if (!connecting_user) {
+				socket.write('HTTP/1.1 404 Connecting User Not Found\r\n\r\n');
+				socket.destroy();
+				return;
+			}
+
+			if (!request.session) {
+				request.session = { save: passThrough }; // should never happen
+			}
+
+			request.session.user = {
+				id: connecting_user.id,
+				login: connecting_user.login,
+				secret: connecting_user.secret,
+				profile_image_url: connecting_user.profile_image_url,
+			};
+
+			request.session.save(() => {
+				wss.handleUpgrade(request, socket, head, function (ws) {
+					wss.emit('connection', ws, request);
+				});
+			});
+
+			return;
+		}
+
 		m = request.nc_url.pathname.match(
 			/^\/ws\/room\/drmario\/producer\/([a-zA-Z0-9-]+)/
 		);
@@ -392,10 +434,20 @@ export default function init(server, wss) {
 
 		if (request.is_drmario_secret_view) {
 			console.log('WS: Adding Dr Mario View', user.login);
-			user.getDrMarioPrivateRoom().addView(connection);
+			// Every Dr Mario layout except the Speed one attaches to the owner's own private
+			// room (one producer, one feed); Speed attaches to the owner's speed room instead,
+			// which relays two independently-attached players' frames tagged by slot.
+			const room =
+				request.drmario.view.layout_id === 'drmario_speed'
+					? user.getDrMarioSpeedRoom()
+					: user.getDrMarioPrivateRoom();
+			room.addView(connection);
 		} else if (request.is_drmario_secret_producer) {
 			console.log(`Dr Mario Secret Producer for ${user.login}`);
 			user.setDrMarioProducerConnection(connection);
+		} else if (request.is_drmario_speed_secret_admin) {
+			console.log(`DrMarioSpeedRoom: ${user.login}: Admin connected`);
+			user.getDrMarioSpeedRoom().setAdmin(connection);
 		} else if (request.is_secret_view) {
 			console.log(
 				'WS: Adding View',

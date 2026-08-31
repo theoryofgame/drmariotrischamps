@@ -2,8 +2,14 @@
 // whatever DrMarioOCR decodes each frame. See DrMarioOCR.js for the actual OCR logic -- this
 // file is just DOM glue around it.
 
-import { LAYOUT, REFERENCE_SIZE, COLOR_PALETTE } from './constants.js';
+import {
+	LAYOUT,
+	REFERENCE_SIZE,
+	COLOR_PALETTE,
+	CALIBRATION_REGIONS,
+} from './constants.js';
 import { DrMarioOCR } from './DrMarioOCR.js';
+import { deriveAllRegionsFromScreen } from './calibrationMath.js';
 import RoundTracker from './RoundTracker.js';
 import {
 	playVideoFromDevice,
@@ -29,12 +35,29 @@ const calInputs = {
 const STORAGE_KEY = 'drmario_ocr_harness_calibration';
 
 function loadCalibration() {
+	let raw;
 	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		return raw ? JSON.parse(raw) : null;
+		raw = localStorage.getItem(STORAGE_KEY);
 	} catch (_err) {
 		return null;
 	}
+	if (!raw) return null;
+
+	let parsed;
+	try {
+		parsed = JSON.parse(raw);
+	} catch (_err) {
+		return null;
+	}
+	if (!parsed) return null;
+
+	// Old shape (before independent per-region calibration existed): a flat {x,y,w,h} whole-
+	// screen rect. Migrate it forward the same way producer.js does.
+	if (!parsed.regions) {
+		return { screen: parsed, regions: deriveAllRegionsFromScreen(parsed) };
+	}
+
+	return parsed;
 }
 
 function saveCalibration(calibration) {
@@ -134,40 +157,171 @@ function buildTrackers() {
 buildTrackers();
 
 function updateCalInputs() {
-	calInputs.x.value = calibration ? Math.round(calibration.x) : '';
-	calInputs.y.value = calibration ? Math.round(calibration.y) : '';
-	calInputs.w.value = calibration ? Math.round(calibration.w) : '';
-	calInputs.h.value = calibration ? Math.round(calibration.h) : '';
+	const screen = calibration?.screen;
+	calInputs.x.value = screen ? Math.round(screen.x) : '';
+	calInputs.y.value = screen ? Math.round(screen.y) : '';
+	calInputs.w.value = screen ? Math.round(screen.w) : '';
+	calInputs.h.value = screen ? Math.round(screen.h) : '';
 }
 updateCalInputs();
+
+// One small box per CALIBRATION_REGIONS entry -- see producer.js's own identical setup for the
+// full reasoning (this mirrors it directly, minus the bottle-anchored quick-seed mode, which
+// isn't ported here to keep this testing tool's own diff smaller).
+const regionCalibrationContainer =
+	document.getElementById('region-calibration');
+const REGION_PREVIEW_SCALE = 3;
+const regionInputs = {};
+const PANEL_FIELD_NAMES = ['top', 'score', 'level', 'virus', 'speed'];
+const regionDebugEls = {};
+
+// field is the only region with a margin at all -- see producer.js's own identical setup for the
+// full reasoning (this mirrors it directly).
+function applyFieldPreviewCrop(previewHolder, canvas, hideMargin) {
+	const { local, size } = CALIBRATION_REGIONS.field;
+
+	if (hideMargin) {
+		previewHolder.style.width = `${local.w * REGION_PREVIEW_SCALE}px`;
+		previewHolder.style.height = `${local.h * REGION_PREVIEW_SCALE}px`;
+		canvas.style.marginLeft = `${-local.x * REGION_PREVIEW_SCALE}px`;
+		canvas.style.marginTop = `${-local.y * REGION_PREVIEW_SCALE}px`;
+	} else {
+		previewHolder.style.width = `${size.w * REGION_PREVIEW_SCALE}px`;
+		previewHolder.style.height = `${size.h * REGION_PREVIEW_SCALE}px`;
+		canvas.style.marginLeft = '0';
+		canvas.style.marginTop = '0';
+	}
+}
+
+Object.entries(CALIBRATION_REGIONS).forEach(([name, { size }]) => {
+	const box = document.createElement('div');
+	box.className = 'region-box';
+
+	const title = document.createElement('h4');
+	title.textContent = name;
+	box.appendChild(title);
+
+	const previewHolder = document.createElement('div');
+	previewHolder.className = 'region-preview-holder';
+	const canvas = ocr.getRegionCanvas(name);
+	canvas.style.width = `${size.w * REGION_PREVIEW_SCALE}px`;
+	canvas.style.height = `${size.h * REGION_PREVIEW_SCALE}px`;
+	previewHolder.appendChild(canvas);
+	box.appendChild(previewHolder);
+
+	if (name === 'field') {
+		const toggleLabel = document.createElement('label');
+		const toggleInput = document.createElement('input');
+		toggleInput.type = 'checkbox';
+		toggleInput.checked = true;
+		toggleLabel.appendChild(toggleInput);
+		toggleLabel.appendChild(document.createTextNode(' Hide margin'));
+		box.insertBefore(toggleLabel, previewHolder);
+
+		applyFieldPreviewCrop(previewHolder, canvas, true);
+		toggleInput.addEventListener('change', () => {
+			applyFieldPreviewCrop(previewHolder, canvas, toggleInput.checked);
+		});
+	}
+
+	const inputs = {};
+	['x', 'y', 'w', 'h'].forEach(key => {
+		const label = document.createElement('label');
+		label.textContent = key.toUpperCase();
+		const input = document.createElement('input');
+		input.type = 'number';
+		box.appendChild(label);
+		box.appendChild(input);
+		inputs[key] = input;
+	});
+
+	// Panel (digit/word) fields only -- see producer.js's own identical setup for the full
+	// reasoning.
+	if (PANEL_FIELD_NAMES.includes(name)) {
+		const debugEl = document.createElement('div');
+		debugEl.className = 'region-debug';
+		box.appendChild(debugEl);
+		regionDebugEls[name] = debugEl;
+	}
+
+	regionCalibrationContainer.appendChild(box);
+	regionInputs[name] = inputs;
+
+	Object.values(inputs).forEach(input => {
+		input.addEventListener('input', () => {
+			applyCalibration({
+				...calibration,
+				regions: {
+					...(calibration?.regions ?? {}),
+					[name]: {
+						x: Number(inputs.x.value) || 0,
+						y: Number(inputs.y.value) || 0,
+						w: Number(inputs.w.value) || 1,
+						h: Number(inputs.h.value) || 1,
+					},
+				},
+			});
+		});
+	});
+});
+
+function updateRegionInputs() {
+	Object.keys(CALIBRATION_REGIONS).forEach(name => {
+		const rect = calibration?.regions?.[name];
+		const inputs = regionInputs[name];
+		inputs.x.value = rect ? Math.round(rect.x) : '';
+		inputs.y.value = rect ? Math.round(rect.y) : '';
+		inputs.w.value = rect ? Math.round(rect.w) : '';
+		inputs.h.value = rect ? Math.round(rect.h) : '';
+	});
+}
+updateRegionInputs();
 
 function applyCalibration(next) {
 	calibration = next;
 	ocr.setCalibration(calibration);
 	saveCalibration(calibration);
 	updateCalInputs();
+	updateRegionInputs();
 }
 
+// Editing the whole-screen fields directly only ever touches `screen` -- deliberately does NOT
+// re-derive `regions`, unlike a fresh click-to-calibrate below, so it can't clobber per-region
+// fine-tuning already done.
 Object.values(calInputs).forEach(input => {
 	input.addEventListener('input', () => {
 		applyCalibration({
-			x: Number(calInputs.x.value) || 0,
-			y: Number(calInputs.y.value) || 0,
-			w: Number(calInputs.w.value) || 1,
-			h: Number(calInputs.h.value) || 1,
+			...calibration,
+			screen: {
+				x: Number(calInputs.x.value) || 0,
+				y: Number(calInputs.y.value) || 0,
+				w: Number(calInputs.w.value) || 1,
+				h: Number(calInputs.h.value) || 1,
+			},
 		});
 	});
 });
 
 document.getElementById('cal-reset').addEventListener('click', () => {
-	calibration = null;
-	ocr.setCalibration(null);
-	localStorage.removeItem(STORAGE_KEY);
-	updateCalInputs();
+	applyCalibration(null);
 });
+
+// Independent per-region calibration is single-player only for now (see constants.js's
+// CALIBRATION_REGIONS comment) -- versus keeps calibrating just the whole screen, so showing 7
+// region boxes that don't affect anything in that layout would only be confusing.
+const regionFinetuneSection = document.getElementById(
+	'region-finetune-section'
+);
+
+function updateSectionVisibility() {
+	regionFinetuneSection.style.display =
+		layoutSelect.value === LAYOUT.VERSUS ? 'none' : '';
+}
+updateSectionVisibility();
 
 layoutSelect.addEventListener('change', () => {
 	ocr.setConfig({ layout: layoutSelect.value, calibration });
+	updateSectionVisibility();
 	buildResultsSkeleton();
 	buildTrackers();
 });
@@ -193,7 +347,11 @@ previewCanvas.addEventListener('click', event => {
 	pendingCorner = null;
 
 	if (w > 4 && h > 4) {
-		applyCalibration({ x: x0, y: y0, w, h });
+		const screenRect = { x: x0, y: y0, w, h };
+		applyCalibration({
+			screen: screenRect,
+			regions: deriveAllRegionsFromScreen(screenRect),
+		});
 	}
 });
 
@@ -362,6 +520,28 @@ function renderResult(result) {
 	}
 }
 
+// Panel-field diagnostics -- see producer.js's own identical setup for the full reasoning.
+function formatFieldDebug(name, debug) {
+	if (!debug) return '';
+
+	const formatEntry = ({ value, distance, bestGuess }) =>
+		value !== null
+			? `${value} (d=${distance})`
+			: `<span class="miss">? guess=${bestGuess ?? '-'} d=${distance ?? '-'}</span>`;
+
+	return name === 'speed'
+		? formatEntry(debug)
+		: debug.map(formatEntry).join('  ');
+}
+
+function updatePanelDebug() {
+	const panelDebug = ocr.getLastPanelDebug();
+
+	PANEL_FIELD_NAMES.forEach(name => {
+		regionDebugEls[name].innerHTML = formatFieldDebug(name, panelDebug?.[name]);
+	});
+}
+
 function loop() {
 	requestAnimationFrame(loop);
 
@@ -369,18 +549,19 @@ function loop() {
 
 	previewCtx.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
 
-	if (!calibration) return;
+	if (!calibration?.screen) return;
 
 	previewCtx.strokeStyle = '#0f0';
 	previewCtx.lineWidth = 2;
 	previewCtx.strokeRect(
-		calibration.x,
-		calibration.y,
-		calibration.w,
-		calibration.h
+		calibration.screen.x,
+		calibration.screen.y,
+		calibration.screen.w,
+		calibration.screen.h
 	);
 
 	const result = ocr.processVideoFrame({ video });
+	if (layoutSelect.value !== LAYOUT.VERSUS) updatePanelDebug();
 	if (result) renderResult(result);
 }
 requestAnimationFrame(loop);

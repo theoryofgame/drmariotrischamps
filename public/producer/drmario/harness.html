@@ -32,6 +32,44 @@
 				image-rendering: pixelated;
 				border: 1px solid #444;
 			}
+			#region-calibration {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 16px;
+				margin-top: 12px;
+			}
+			.region-box {
+				border: 1px solid #444;
+				border-radius: 4px;
+				padding: 8px;
+			}
+			.region-box h4 {
+				margin: 0 0 6px 0;
+				font-size: 0.9rem;
+			}
+			.region-preview-holder {
+				background: #000;
+				border: 1px solid #333;
+				display: inline-block;
+				margin-bottom: 6px;
+				overflow: hidden;
+			}
+			.region-preview-holder canvas {
+				image-rendering: pixelated;
+				display: block;
+			}
+			.region-box input[type='number'] {
+				width: 48px;
+			}
+			.region-debug {
+				font-family: monospace;
+				font-size: 0.75rem;
+				color: #999;
+				margin-top: 4px;
+			}
+			.region-debug .miss {
+				color: #f66;
+			}
 			.board-grid {
 				display: grid;
 				gap: 1px;
@@ -107,11 +145,14 @@
 		</section>
 
 		<section id="calibration-section">
-			<h3>1. Calibrate</h3>
+			<h3>1. Quick seed</h3>
 			<p class="hint">
 				Click the top-left corner of the NES screen in the preview below, then
-				click the bottom-right corner. Fine-tune with the fields if needed.
-				Saved automatically.
+				click the bottom-right corner -- gives every region below (step 2,
+				single- player only) a starting value in one click. Fine-tune the
+				whole-screen fields directly if needed; this only affects
+				isTitleScreen() detection and this quick seed, not any region's own
+				calibration once set. Saved automatically.
 			</p>
 			<canvas id="preview-canvas"></canvas>
 			<div>
@@ -119,7 +160,17 @@
 				<label for="cal-y">Y</label><input id="cal-y" type="number" />
 				<label for="cal-w">W</label><input id="cal-w" type="number" />
 				<label for="cal-h">H</label><input id="cal-h" type="number" />
-				<button id="cal-reset">Reset</button>
+				<button id="cal-reset">Reset all</button>
+			</div>
+
+			<div id="region-finetune-section">
+				<h3>1b. Fine-tune each region (single-player only)</h3>
+				<p class="hint">
+					Each box shows exactly what that region currently captures -- adjust a
+					region's own X/Y/W/H directly if it looks wrong; this never affects
+					any other region. Saved automatically.
+				</p>
+				<div id="region-calibration"></div>
 			</div>
 		</section>
 

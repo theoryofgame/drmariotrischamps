@@ -1,0 +1,1035 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<style>
+			html,
+			body {
+				padding: 0;
+				margin: 0;
+			}
+
+			* {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				box-sizing: border-box;
+			}
+
+			/* Unlike drmario_versus_drmc.html (transparent, composited over a live camera feed),
+			   this layout renders both players' full sprite-accurate bottles itself -- there's no
+			   external video to show through, so this paints a solid background like the plain
+			   _nes layouts do. */
+			#stream_bg {
+				position: relative;
+				width: 1280px;
+				height: 720px;
+				overflow: hidden;
+				background: #111;
+				color: #eee;
+				display: flex;
+				flex-direction: column;
+			}
+
+			/* Both bars, bar-pill, crown-circle: reused verbatim from drmario_versus_drmc.html --
+			   see that file's own comments for the DrMC reference-screenshot provenance. */
+			#top-bar,
+			#bottom-bar {
+				background: #e7235a;
+				height: 44px;
+				flex: 0 0 auto;
+			}
+
+			#top-bar {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 8px;
+			}
+
+			#bottom-bar {
+				display: grid;
+				grid-template-columns: 1fr auto 1fr;
+				align-items: center;
+				gap: 8px;
+				padding: 0 12px;
+			}
+
+			.bottom-bar-side {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+
+			.bottom-bar-side.left {
+				justify-content: flex-end;
+			}
+
+			.bottom-bar-side.right {
+				justify-content: flex-start;
+			}
+
+			.bar-pill {
+				background: #0a0b0a;
+				border-radius: 999px;
+				padding: 4px 20px;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+
+			.bar-pill p {
+				margin: 0;
+				font-weight: bold;
+				color: #fff;
+				font-size: 18px;
+				white-space: nowrap;
+			}
+
+			#bottom-bar .bar-pill {
+				padding: 4px 16px;
+			}
+
+			#bottom-bar .bar-pill p {
+				font-size: 16px;
+			}
+
+			.crown-circle {
+				display: inline-block;
+				width: 13px;
+				height: 13px;
+				border-radius: 50%;
+				background: #0a0b0a;
+				border: 1px solid #444;
+				margin: 0 1px;
+			}
+
+			.crown-circle.filled {
+				background: #fae65f;
+				border-color: #fae65f;
+			}
+
+			/* #playfield/#playfield-row split, side-box: reused verbatim -- see
+			   drmario_versus_drmc.html's own comments for why #playfield-row is a separate nested
+			   flex row rather than align-items: flex-end directly on #playfield. */
+			#playfield {
+				flex: 1 1 auto;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+			}
+
+			#playfield-row {
+				display: flex;
+				align-items: flex-end;
+				justify-content: center;
+				gap: 16px;
+			}
+
+			.side-box {
+				background: #0a0b0a;
+				border: 2px solid #64b7d5;
+				border-radius: 4px;
+				padding: 8px 12px;
+				width: 90px;
+				text-align: center;
+				overflow: hidden;
+			}
+
+			.side-box-label {
+				display: block;
+				font-size: 11px;
+				font-weight: bold;
+				color: #aaa;
+			}
+
+			.side-box-value {
+				display: block;
+				font-size: 16px;
+				font-weight: bold;
+				color: #fff;
+				margin-top: 2px;
+			}
+
+			/* New, not present in the versus layout: the two players' games are fully independent
+			   (no shared round boundary), so this sits between the two bottles showing the live
+			   cross-level-normalized virus comparison (see SpeedRunTracker.js's
+			   totalVirusesRemaining) -- vertically centered against the bottles rather than bottom-
+			   aligned like the side boxes, since it isn't tied to either bottle specifically. */
+			.center-compare {
+				align-self: center;
+				background: #0a0b0a;
+				border: 2px solid #64b7d5;
+				border-radius: 4px;
+				padding: 8px 14px;
+				text-align: center;
+				min-width: 120px;
+			}
+
+			.center-compare-label {
+				display: block;
+				font-size: 11px;
+				font-weight: bold;
+				color: #aaa;
+			}
+
+			.center-compare-value {
+				display: block;
+				font-size: 18px;
+				font-weight: bold;
+				color: #fff;
+				margin-top: 2px;
+			}
+
+			.player-column {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 6px;
+			}
+
+			/* Top strip: same 3 boxes as drmario_versus_drmc.html (VIR/next-pill/SPD) plus a 4th,
+			   TIME -- the live per-player run clock, since Speed has no shared round boundary to
+			   hang a single timer off of the way the versus layout's top-bar pill does. */
+			.top-strip {
+				display: flex;
+				background: #fff;
+				border: 2px solid #64b7d5;
+				border-radius: 4px;
+				overflow: hidden;
+			}
+
+			.strip-box {
+				padding: 3px 8px;
+				display: flex;
+				align-items: center;
+				gap: 4px;
+				border-right: 1px solid #64b7d5;
+			}
+
+			.strip-box:last-child {
+				border-right: none;
+			}
+
+			.strip-label {
+				font-weight: bold;
+				font-size: 12px;
+				color: #000;
+			}
+
+			.strip-value {
+				font-weight: bold;
+				font-size: 15px;
+				color: #000;
+			}
+
+			.next-pill-canvas {
+				background: #000;
+				display: block;
+			}
+
+			.strip-box.next-pill-box {
+				padding: 0;
+			}
+
+			/* New: per-level split times, sitting outside .board-wrap (so it stays visible even
+			   while the freeze overlay dims the bottle itself -- see updateFreezeOverlay). The
+			   split-ahead annotation (e.g. "4: 1:23 (-3)") only appears on the faster side once
+			   both players have a recorded split for that level -- see renderSplitList(). Boxed
+			   the same way as .side-box (same border/background/radius) for visual consistency,
+			   per direct request. */
+			.split-list {
+				background: #0a0b0a;
+				border: 2px solid #64b7d5;
+				border-radius: 4px;
+				padding: 6px 10px;
+				min-width: 90px;
+				font-size: 12px;
+				color: #ccc;
+				text-align: center;
+				min-height: 14px;
+			}
+
+			.split-ahead {
+				color: #6f6;
+				font-weight: bold;
+			}
+
+			/* Bottle border, board-wrap/board-canvas, freeze-overlay/-outcome/-stats/-logo, rush:
+			   reused verbatim from drmario_versus_drmc.html -- see that file's own comments for
+			   the DrMC reference-screenshot provenance and the line-height/blend-mode fixes. */
+			.bottle-border-red {
+				border: 3px solid #ee3434;
+				display: inline-block;
+				line-height: 0;
+			}
+
+			.bottle-border-cyan {
+				border: 3px solid #64b7d5;
+				display: inline-block;
+				line-height: 0;
+			}
+
+			.bottle-border-gold {
+				border: 2px solid #ebb423;
+				display: inline-block;
+				line-height: 0;
+			}
+
+			.board-wrap {
+				position: relative;
+				display: inline-block;
+				line-height: 0;
+			}
+
+			.board-canvas {
+				display: block;
+				background: #000;
+			}
+
+			.freeze-overlay {
+				position: absolute;
+				inset: 0;
+				background: rgba(15, 15, 15, 0.8);
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				gap: 10px;
+				opacity: 0;
+				pointer-events: none;
+				transition: opacity 0.4s;
+				text-align: center;
+				padding: 12px;
+				line-height: normal;
+			}
+
+			.freeze-overlay.visible {
+				opacity: 1;
+			}
+
+			.freeze-outcome {
+				margin: 0;
+				font-weight: bold;
+				font-size: 22px;
+				color: #ff0;
+			}
+
+			.freeze-stats {
+				display: flex;
+				flex-direction: column;
+				gap: 3px;
+			}
+
+			.freeze-stats p {
+				margin: 0;
+				font-size: 13px;
+				color: #ddd;
+			}
+
+			.freeze-logo {
+				max-width: 60%;
+				max-height: 35%;
+				border-radius: 10px;
+				box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+			}
+
+			.rush {
+				color: #f80;
+				font-weight: bold;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="stream_bg">
+			<div id="top-bar">
+				<div class="bar-pill" id="header-pill">
+					<p id="header-text-display"></p>
+				</div>
+			</div>
+
+			<div id="playfield">
+				<div id="playfield-row">
+					<div class="side-box" id="side-box-1p">
+						<span class="side-box-label">PILLS/MIN</span>
+						<span class="side-box-value">0.0</span>
+					</div>
+
+					<div class="player-column">
+						<div class="top-strip">
+							<div class="strip-box">
+								<span class="strip-label">VIR</span>
+								<span class="strip-value" id="vir-1p">?</span>
+							</div>
+							<div class="strip-box next-pill-box">
+								<canvas class="next-pill-canvas" id="next-1p"></canvas>
+							</div>
+							<div class="strip-box">
+								<span class="strip-label">SPD</span>
+								<span class="strip-value" id="spd-1p">?</span>
+							</div>
+							<div class="strip-box">
+								<span class="strip-label">TIME</span>
+								<span class="strip-value" id="time-1p">--:--</span>
+							</div>
+						</div>
+						<div class="bottle-border-red">
+							<div class="bottle-border-cyan">
+								<div class="bottle-border-gold">
+									<div class="board-wrap">
+										<canvas class="board-canvas" id="board-1p"></canvas>
+										<div class="freeze-overlay" id="freeze-1p">
+											<p class="freeze-outcome" id="freeze-outcome-1p"></p>
+											<img
+												class="freeze-logo"
+												id="freeze-logo-1p"
+												src="/producer/drmario/drmc_logo.jpg"
+												alt=""
+											/>
+											<div class="freeze-stats" id="freeze-stats-1p">
+												<p>Total: <span id="freeze-total-1p"></span></p>
+												<p>Pills/min: <span id="freeze-ppm-1p"></span></p>
+												<p>Viruses/min: <span id="freeze-vpm-1p"></span></p>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="split-list" id="splits-1p"></div>
+					</div>
+
+					<div class="center-compare">
+						<span class="center-compare-label">VIRUSES AHEAD</span>
+						<span class="center-compare-value" id="center-compare-value"
+							>--</span
+						>
+					</div>
+
+					<div class="player-column">
+						<div class="top-strip">
+							<div class="strip-box">
+								<span class="strip-label">VIR</span>
+								<span class="strip-value" id="vir-2p">?</span>
+							</div>
+							<div class="strip-box next-pill-box">
+								<canvas class="next-pill-canvas" id="next-2p"></canvas>
+							</div>
+							<div class="strip-box">
+								<span class="strip-label">SPD</span>
+								<span class="strip-value" id="spd-2p">?</span>
+							</div>
+							<div class="strip-box">
+								<span class="strip-label">TIME</span>
+								<span class="strip-value" id="time-2p">--:--</span>
+							</div>
+						</div>
+						<div class="bottle-border-red">
+							<div class="bottle-border-cyan">
+								<div class="bottle-border-gold">
+									<div class="board-wrap">
+										<canvas class="board-canvas" id="board-2p"></canvas>
+										<div class="freeze-overlay" id="freeze-2p">
+											<p class="freeze-outcome" id="freeze-outcome-2p"></p>
+											<img
+												class="freeze-logo"
+												id="freeze-logo-2p"
+												src="/producer/drmario/drmc_logo.jpg"
+												alt=""
+											/>
+											<div class="freeze-stats" id="freeze-stats-2p">
+												<p>Total: <span id="freeze-total-2p"></span></p>
+												<p>Pills/min: <span id="freeze-ppm-2p"></span></p>
+												<p>Viruses/min: <span id="freeze-vpm-2p"></span></p>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="split-list" id="splits-2p"></div>
+					</div>
+
+					<div class="side-box" id="side-box-2p">
+						<span class="side-box-label">PILLS/MIN</span>
+						<span class="side-box-value">0.0</span>
+					</div>
+				</div>
+			</div>
+
+			<div id="bottom-bar">
+				<div class="bottom-bar-side left">
+					<div class="bar-pill">
+						<p id="player-name-1p">Player 1</p>
+						<span id="crowns-1p"></span>
+					</div>
+				</div>
+				<div class="bar-pill"><p id="level-set-label"></p></div>
+				<div class="bottom-bar-side right">
+					<div class="bar-pill">
+						<span id="crowns-2p"></span>
+						<p id="player-name-2p">Player 2</p>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<script type="module">
+			import Connection from '/js/connection.js';
+			import RoundTracker from '/producer/drmario/RoundTracker.js';
+			import LiveMetrics from '/producer/drmario/LiveMetrics.js';
+			import SpeedRunTracker from '/producer/drmario/SpeedRunTracker.js';
+			import { calculateInternalSpeed } from '/producer/drmario/InternalSpeed.js';
+			import {
+				drawCell,
+				currentVirusFrame,
+			} from '/producer/drmario/CellRenderer.js';
+			import {
+				COLOR_PALETTE,
+				COLS,
+				ROWS,
+			} from '/producer/drmario/constants.js';
+
+			// Same reasoning as every other Dr Mario view -- the WS paths live in their own
+			// namespace, so this can't rely on Connection()'s "derive it from location.pathname"
+			// convenience. Unlike drmario_versus_drmc.html, there's only ever one connection here
+			// (not two) -- the room relays both players' tagged frames over it, since attachment
+			// is admin-driven server-side rather than this page juggling two separate secrets.
+			const [, , layout, secret] = location.pathname.split('/');
+			const wsProtocol = location.protocol.match(/^https/i) ? 'wss:' : 'ws:';
+			const connection = new Connection(
+				`${wsProtocol}//${location.host}/ws/view/drmario/${layout}/${secret}`
+			);
+
+			const DOM_SUFFIX = { player1: '1p', player2: '2p' };
+
+			['freeze-logo-1p', 'freeze-logo-2p'].forEach(id => {
+				const img = document.getElementById(id);
+				img.addEventListener('error', () => {
+					img.style.display = 'none';
+				});
+			});
+
+			// Unlike drmario_versus_drmc.html, these two players' games are fully independent --
+			// no shared round boundary, so no endRound()/syncRoundStart() cross-wiring at all (see
+			// SpeedRunTracker.js's header comment).
+			const trackers = {
+				player1: new RoundTracker(),
+				player2: new RoundTracker(),
+			};
+
+			const piecesEnteredThisRound = { player1: 0, player2: 0 };
+			trackers.player1.addEventListener('round_start', () => {
+				piecesEnteredThisRound.player1 = 0;
+			});
+			trackers.player1.addEventListener('piece_entered', () => {
+				piecesEnteredThisRound.player1++;
+			});
+			trackers.player2.addEventListener('round_start', () => {
+				piecesEnteredThisRound.player2 = 0;
+			});
+			trackers.player2.addEventListener('piece_entered', () => {
+				piecesEnteredThisRound.player2++;
+			});
+
+			// carryAcrossLevels: true, same as drmario_single(_nes).html -- Speed is a continuous
+			// multi-level playthrough, so pieces/viruses-per-minute should span the whole race, not
+			// reset every level clear (it still resets on a genuine game_over/topout, which is
+			// correct -- see LiveMetrics.js's header comment).
+			const stats = {
+				player1: new LiveMetrics(trackers.player1, { carryAcrossLevels: true }),
+				player2: new LiveMetrics(trackers.player2, { carryAcrossLevels: true }),
+			};
+
+			const speedTrackers = {
+				player1: new SpeedRunTracker(trackers.player1),
+				player2: new SpeedRunTracker(trackers.player2),
+			};
+
+			// --- Match state (server-authoritative, pushed by DrMarioSpeedRoom) ------------------
+
+			let bestof = 3;
+			let levelSet = [];
+			let victories = [0, 0];
+			let raceNumber = 1;
+			let headerText = '';
+
+			// Free text, admin-set (speed_admin.html) -- replaces an earlier computed "BEST OF X
+			// -- RACE Y" default per direct request, so the organizer controls exactly what shows
+			// at the top of the broadcast (bestof/raceNumber are still tracked above for whatever
+			// else might want them -- e.g. the crown dots already convey progress visually -- just
+			// no longer rendered here directly).
+			function renderHeader() {
+				document.getElementById('header-text-display').textContent = headerText;
+			}
+
+			function renderLevelSetLabel() {
+				const el = document.getElementById('level-set-label');
+				if (!levelSet.length) {
+					el.textContent = '';
+					return;
+				}
+				el.textContent =
+					levelSet.length === 1
+						? `LEVEL ${levelSet[0]}`
+						: `LEVELS ${levelSet[0]}-${levelSet[levelSet.length - 1]}`;
+			}
+
+			// Fills outward from center, mirroring drmario_versus_drmc.html's renderCrowns() --
+			// player 1's circles sit to the left of its own name (so the one closest to the pill's
+			// edge, last in DOM order, fills first), player 2's sit to the right (first in DOM
+			// order fills first, already the natural order). Rebuilt from scratch on every call
+			// since the circle *count* itself can change between races, unlike versus's fixed 3 --
+			// winsNeeded (not bestof itself), since a race is decided once one player reaches a
+			// majority: 2 wins for a best of 3, 3 wins for a best of 5.
+			function renderCrowns(suffix, wins) {
+				const winsNeeded = Math.ceil(bestof / 2);
+				const container = document.getElementById(`crowns-${suffix}`);
+				container.innerHTML = '';
+				for (let i = 0; i < winsNeeded; i++) {
+					const span = document.createElement('span');
+					span.className = 'crown-circle';
+					const filled = suffix === '1p' ? i >= winsNeeded - wins : i < wins;
+					if (filled) span.classList.add('filled');
+					container.appendChild(span);
+				}
+			}
+
+			function renderAllCrowns() {
+				renderCrowns('1p', victories[0]);
+				renderCrowns('2p', victories[1]);
+			}
+
+			// --- Per-player board-freeze/lookback machinery ---------------------------------------
+			// Reused verbatim from drmario_versus_drmc.html (see its own header comments for the
+			// full reasoning) -- still triggered on every round_end so each individual level
+			// transition avoids the victory-pose-obscures-cells artifact, independent of whether
+			// the whole *race* is complete. Unlike versus, there's no shared match boundary here
+			// (no matchOver/ROUND_END_GRACE_MS needed) -- each player's own RoundTracker is the
+			// only source of truth for their own board. The one thing Speed adds: once a player's
+			// SpeedRunTracker reaches 'complete', the real NES game keeps going regardless (Dr
+			// Mario has no idea the admin's level set ended) and will fire further round_start
+			// events on its own -- the round_start listener below stays frozen through those until
+			// an explicit reset (see the API handlers), instead of un-freezing on a race that's
+			// already been called.
+
+			const roundEnded = { '1p': false, '2p': false };
+			const raceComplete = { '1p': false, '2p': false };
+			const lastOutcome = { '1p': null, '2p': null };
+			const latestRunSnapshot = { '1p': null, '2p': null };
+			const latestStatsSnapshot = { '1p': null, '2p': null };
+
+			const BOARD_LOOKBACK_FRAMES = { topout: 1, game_over: 4 };
+			const DEFAULT_BOARD_LOOKBACK_FRAMES = 2;
+			const BOARD_HISTORY_SIZE =
+				Math.max(...Object.values(BOARD_LOOKBACK_FRAMES)) + 1;
+			const boardHistory = { '1p': [], '2p': [] };
+
+			const CLEARING_MAX_UNKNOWN_CELLS = 3;
+			const lastClearingBoard = { '1p': null, '2p': null };
+
+			function recordBoardHistory(suffix, board) {
+				const history = boardHistory[suffix];
+				history.push(board);
+				if (history.length > BOARD_HISTORY_SIZE) history.shift();
+
+				const cells = board.flat();
+				const hasClearing = cells.some(cell => cell?.type === 'clearing');
+				const unknownCount = cells.filter(
+					cell => cell?.type === 'unknown'
+				).length;
+				if (hasClearing && unknownCount < CLEARING_MAX_UNKNOWN_CELLS) {
+					lastClearingBoard[suffix] = board;
+				}
+			}
+
+			function freezeOnEarlierBoard(suffix, outcome) {
+				if (outcome === 'stage_clear' && lastClearingBoard[suffix]) {
+					renderBoard(
+						document.getElementById(`board-${suffix}`),
+						lastClearingBoard[suffix]
+					);
+					return;
+				}
+
+				const history = boardHistory[suffix];
+				if (history.length === 0) return;
+
+				const lookback =
+					BOARD_LOOKBACK_FRAMES[outcome] ?? DEFAULT_BOARD_LOOKBACK_FRAMES;
+				const index = Math.max(0, history.length - 1 - lookback);
+				renderBoard(document.getElementById(`board-${suffix}`), history[index]);
+			}
+
+			function wireRoundBoundary(playerKey) {
+				const suffix = DOM_SUFFIX[playerKey];
+				trackers[playerKey].addEventListener('round_end', e => {
+					roundEnded[suffix] = true;
+					lastOutcome[suffix] = e.detail.outcome;
+					freezeOnEarlierBoard(suffix, e.detail.outcome);
+				});
+				trackers[playerKey].addEventListener('round_start', () => {
+					if (raceComplete[suffix]) return; // stay frozen until an explicit reset
+					roundEnded[suffix] = false;
+					boardHistory[suffix] = [];
+					lastClearingBoard[suffix] = null;
+				});
+			}
+			wireRoundBoundary('player1');
+			wireRoundBoundary('player2');
+
+			// Explicit reset (resetPlayerRun/resetRace, or a fresh setLevelSet) -- separate from
+			// SpeedRunTracker.reset() itself, since board-freeze state is a view-level concept
+			// SpeedRunTracker knows nothing about.
+			function resetPlayerDisplay(suffix) {
+				roundEnded[suffix] = false;
+				boardHistory[suffix] = [];
+				lastClearingBoard[suffix] = null;
+				renderBoard(document.getElementById(`board-${suffix}`), null);
+			}
+
+			// --- Split list, live timer, "viruses ahead" ------------------------------------------
+
+			function formatTime(ms) {
+				if (ms == null) return '--:--';
+				const totalSeconds = Math.floor(ms / 1000);
+				const m = Math.floor(totalSeconds / 60);
+				const s = totalSeconds % 60;
+				return `${m}:${String(s).padStart(2, '0')}`;
+			}
+
+			function renderTimeBox(suffix, elapsedMs) {
+				document.getElementById(`time-${suffix}`).textContent =
+					formatTime(elapsedMs);
+			}
+
+			// Per direct instruction: the displayed number is each level's own duration (this
+			// level's cumulative split minus the previous level's), not the running total elapsed
+			// since the run started -- SpeedRunTracker.splits itself stays cumulative (checkpoint
+			// time since runStartTime), since that's what the ahead-by comparison below actually
+			// needs: "how much total race time ahead was I once I reached this level," not "who
+			// cleared this one level faster." Only the *faster* side gets the parenthetical
+			// annotation (the trailing side's own plain time already makes their deficit obvious).
+			function renderSplitList(suffix) {
+				const snapshot = latestRunSnapshot[suffix];
+				const otherSnapshot = latestRunSnapshot[suffix === '1p' ? '2p' : '1p'];
+				const el = document.getElementById(`splits-${suffix}`);
+
+				if (!snapshot || !levelSet.length) {
+					el.innerHTML = '';
+					return;
+				}
+
+				el.innerHTML = levelSet
+					.map((level, index) => {
+						const cumulative = snapshot.splits[level];
+						if (cumulative == null) return `<div>${level}: --:--</div>`;
+
+						const previousLevel = index > 0 ? levelSet[index - 1] : null;
+						const previousCumulative =
+							previousLevel != null ? (snapshot.splits[previousLevel] ?? 0) : 0;
+						const levelTime = cumulative - previousCumulative;
+
+						let annotation = '';
+						const otherCumulative = otherSnapshot?.splits[level];
+						if (otherCumulative != null) {
+							const diffSeconds = Math.round(
+								(otherCumulative - cumulative) / 1000
+							);
+							if (diffSeconds > 0) {
+								annotation = ` <span class="split-ahead">(-${diffSeconds})</span>`;
+							}
+						}
+
+						return `<div>${level}: ${formatTime(levelTime)}${annotation}</div>`;
+					})
+					.join('');
+			}
+
+			function renderSplitLists() {
+				renderSplitList('1p');
+				renderSplitList('2p');
+			}
+
+			// Cross-level normalized -- see SpeedRunTracker.js's totalVirusesRemaining for the full
+			// reasoning. Always comparable, no same-level restriction needed.
+			function renderCenterCompare() {
+				const s1 = latestRunSnapshot['1p'];
+				const s2 = latestRunSnapshot['2p'];
+				const el = document.getElementById('center-compare-value');
+
+				if (!s1 || !s2) {
+					el.textContent = '--';
+					return;
+				}
+
+				// diff > 0 means player 1 has fewer viruses left, i.e. player 1 is ahead -- the
+				// triangle always points toward whichever side is leading (left toward player 1,
+				// right toward player 2, matching their on-screen positions), per direct request
+				// for a simpler at-a-glance readout than a "1P by N" sentence.
+				const diff = s2.totalVirusesRemaining - s1.totalVirusesRemaining;
+				if (diff === 0) {
+					el.textContent = 'EVEN';
+				} else if (diff > 0) {
+					el.textContent = `◀ ${diff}`;
+				} else {
+					el.textContent = `${Math.abs(diff)} ▶`;
+				}
+			}
+
+			function updateFreezeOverlay(suffix) {
+				const overlayEl = document.getElementById(`freeze-${suffix}`);
+				const frozen = raceComplete[suffix];
+				overlayEl.classList.toggle('visible', frozen);
+
+				if (!frozen) return;
+
+				document.getElementById(`freeze-outcome-${suffix}`).textContent =
+					'FINISHED';
+
+				const snapshot = latestRunSnapshot[suffix];
+				document.getElementById(`freeze-total-${suffix}`).textContent =
+					formatTime(snapshot?.elapsedMs);
+
+				const s = latestStatsSnapshot[suffix];
+				document.getElementById(`freeze-ppm-${suffix}`).textContent = s
+					? s.piecesPerMinute.toFixed(1)
+					: '?';
+				document.getElementById(`freeze-vpm-${suffix}`).textContent = s
+					? s.virusClearsPerMinute.toFixed(1)
+					: '?';
+			}
+
+			function handleRunUpdated(playerKey, snapshot) {
+				const suffix = DOM_SUFFIX[playerKey];
+				latestRunSnapshot[suffix] = snapshot;
+				raceComplete[suffix] = snapshot.status === 'complete';
+
+				renderTimeBox(suffix, snapshot.elapsedMs);
+				renderSplitLists();
+				updateFreezeOverlay(suffix);
+				renderCenterCompare();
+			}
+			speedTrackers.player1.addEventListener('run_updated', e =>
+				handleRunUpdated('player1', e.detail)
+			);
+			speedTrackers.player2.addEventListener('run_updated', e =>
+				handleRunUpdated('player2', e.detail)
+			);
+
+			// Ticks the live timer smoothly between discrete RoundTracker events, same 250ms
+			// cadence as drmario_versus_drmc.html's own round timer (neither RoundTracker nor
+			// SpeedRunTracker emits on a wall-clock cadence by itself).
+			setInterval(() => {
+				['1p', '2p'].forEach(suffix => {
+					const snapshot = latestRunSnapshot[suffix];
+					if (snapshot?.status === 'in_progress') {
+						renderTimeBox(suffix, Date.now() - snapshot.runStartTime);
+					}
+				});
+			}, 250);
+
+			// --- Side stat box (pieces/min by default, drought/rush callout when active) ---------
+
+			const DROUGHT_DISPLAY_THRESHOLD = 5;
+
+			function rgbFor(colorName) {
+				const rgb = COLOR_PALETTE[colorName];
+				return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+			}
+
+			function worstDrought(colorDroughts) {
+				const [color, count] = Object.entries(colorDroughts).reduce(
+					(best, cur) => (cur[1] > best[1] ? cur : best)
+				);
+				return count < DROUGHT_DISPLAY_THRESHOLD ? null : { color, count };
+			}
+
+			// Pills/min, not viruses/min -- per direct instruction, whoever's ahead trivially has
+			// the better viruses/min figure, so it's not an interesting live comparison the way
+			// "who's playing their pieces faster" is.
+			function renderSideBox(suffix, s) {
+				const el = document.getElementById(`side-box-${suffix}`);
+				if (s.isRushing) {
+					el.innerHTML = `<span class="side-box-label rush">RUSH</span><span class="side-box-value rush">x${s.rushStreak}</span>`;
+					return;
+				}
+				const drought = worstDrought(s.colorDroughts);
+				if (drought) {
+					const color = rgbFor(drought.color);
+					el.innerHTML = `<span class="side-box-label" style="color: ${color}">DROUGHT</span><span class="side-box-value" style="color: ${color}">x${drought.count}</span>`;
+					return;
+				}
+				el.innerHTML = `<span class="side-box-label">PILLS/MIN</span><span class="side-box-value">${s.piecesPerMinute.toFixed(1)}</span>`;
+			}
+
+			function renderStats(suffix, s) {
+				if (raceComplete[suffix]) return; // frozen -- don't let numbers drift post-race
+				latestStatsSnapshot[suffix] = s;
+				renderSideBox(suffix, s);
+			}
+			stats.player1.addEventListener('stats_updated', e =>
+				renderStats('1p', e.detail)
+			);
+			stats.player2.addEventListener('stats_updated', e =>
+				renderStats('2p', e.detail)
+			);
+
+			// --- Bottle/next-pill rendering (sprite-accurate, via CellRenderer.js) ----------------
+
+			const CELL_PX = 28;
+			const NEXT_PILL_CELL_PX = 16;
+
+			function renderBoard(canvas, board) {
+				const ctx = canvas.getContext('2d');
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+				if (!board) return;
+
+				const virusFrame = currentVirusFrame();
+				board.forEach((row, rowIdx) => {
+					row.forEach((cell, colIdx) => {
+						drawCell(
+							ctx,
+							colIdx * CELL_PX,
+							rowIdx * CELL_PX,
+							CELL_PX,
+							cell,
+							virusFrame
+						);
+					});
+				});
+			}
+
+			function renderNextPill(canvas, nextPill) {
+				const ctx = canvas.getContext('2d');
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+				if (!nextPill) return;
+
+				const virusFrame = currentVirusFrame();
+				drawCell(ctx, 0, 0, NEXT_PILL_CELL_PX, nextPill.left, virusFrame);
+				drawCell(
+					ctx,
+					NEXT_PILL_CELL_PX,
+					0,
+					NEXT_PILL_CELL_PX,
+					nextPill.right,
+					virusFrame
+				);
+			}
+
+			['board-1p', 'board-2p'].forEach(id => {
+				const canvas = document.getElementById(id);
+				canvas.width = COLS * CELL_PX;
+				canvas.height = ROWS * CELL_PX;
+			});
+			['next-1p', 'next-2p'].forEach(id => {
+				const canvas = document.getElementById(id);
+				canvas.width = 2 * NEXT_PILL_CELL_PX;
+				canvas.height = NEXT_PILL_CELL_PX;
+			});
+
+			function renderFrame(playerKey, data) {
+				const suffix = DOM_SUFFIX[playerKey];
+
+				document.getElementById(`player-name-${suffix}`).textContent =
+					data.playerName ||
+					(playerKey === 'player1' ? 'Player 1' : 'Player 2');
+
+				// Only redraw while this player's own round hasn't ended (see wireRoundBoundary) --
+				// skipping this leaves the canvas showing its last-drawn frame, which is exactly
+				// the freeze the dim overlay layers on top of once the whole race is complete.
+				if (!roundEnded[suffix] && data.board) {
+					renderBoard(document.getElementById(`board-${suffix}`), data.board);
+					recordBoardHistory(suffix, data.board);
+				}
+
+				renderNextPill(
+					document.getElementById(`next-${suffix}`),
+					data.nextPill
+				);
+
+				const internalSpeed = calculateInternalSpeed(
+					data.speed,
+					piecesEnteredThisRound[playerKey]
+				);
+				document.getElementById(`vir-${suffix}`).textContent =
+					data.virus ?? '?';
+				document.getElementById(`spd-${suffix}`).textContent =
+					internalSpeed ?? '?';
+
+				trackers[playerKey].processFrame(data);
+			}
+
+			// --- Wire protocol ----------------------------------------------------------------------
+
+			const API = {
+				// Tagged by slot (0/1), unlike versus's own always-0 fallback -- see
+				// DrMarioSpeedRoom.js's handleProducerMessage().
+				frame(player_idx, data) {
+					if (data.layout !== 'single_player') return;
+					renderFrame(player_idx === 0 ? 'player1' : 'player2', data);
+				},
+
+				setBestOf(n) {
+					bestof = n;
+					renderAllCrowns();
+				},
+
+				setLevelSet(levels) {
+					levelSet = levels;
+					renderLevelSetLabel();
+					speedTrackers.player1.setLevelSet(levelSet);
+					speedTrackers.player2.setLevelSet(levelSet);
+					resetPlayerDisplay('1p');
+					resetPlayerDisplay('2p');
+					renderSplitLists();
+				},
+
+				setVictories(v) {
+					victories = v;
+					renderAllCrowns();
+				},
+
+				setRaceNumber(n) {
+					raceNumber = n;
+				},
+
+				setHeaderText(text) {
+					headerText = text ?? '';
+					renderHeader();
+				},
+
+				resetPlayerRun(slot) {
+					const playerKey = slot === 0 ? 'player1' : 'player2';
+					speedTrackers[playerKey].reset();
+					resetPlayerDisplay(DOM_SUFFIX[playerKey]);
+				},
+
+				resetRace() {
+					speedTrackers.player1.reset();
+					speedTrackers.player2.reset();
+					resetPlayerDisplay('1p');
+					resetPlayerDisplay('2p');
+				},
+
+				message() {}, // noop -- chat messages, same as every other Dr Mario view
+			};
+
+			connection.onMessage = function (frame) {
+				try {
+					const [method, ...args] = frame;
+					API[method]?.apply(API, args);
+				} catch (e) {
+					console.error(e);
+				}
+			};
+
+			renderHeader();
+			renderAllCrowns();
+			renderLevelSetLabel();
+		</script>
+	</body>
+</html>
