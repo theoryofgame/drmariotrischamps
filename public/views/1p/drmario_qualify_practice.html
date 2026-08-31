@@ -1,0 +1,654 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<style>
+			html,
+			body {
+				padding: 0;
+				margin: 0;
+			}
+
+			* {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				box-sizing: border-box;
+			}
+
+			/* Same "left half only, transparent, camera on the right" design as
+			   drmario_speed_practice.html -- see that file's own comments. */
+			#stream_bg {
+				position: relative;
+				width: 1280px;
+				height: 720px;
+				overflow: hidden;
+				color: #eee;
+				display: flex;
+				align-items: center;
+			}
+
+			#practice-column {
+				display: flex;
+				flex-direction: column;
+				align-items: flex-start;
+				gap: 10px;
+				padding: 28px;
+				width: 560px;
+			}
+
+			.bar-pill {
+				background: #0a0b0a;
+				border-radius: 999px;
+				padding: 4px 20px;
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+
+			.bar-pill p {
+				margin: 0;
+				font-weight: bold;
+				color: #fff;
+				font-size: 16px;
+				white-space: nowrap;
+			}
+
+			/* The qualifying score badge -- blank until the 30:00 mark, then frozen for the rest of
+			   the session (see QualifyRunTracker.js's checkQualifySnapshot). Styled distinctly (gold
+			   border) so it reads as "the number that matters" at a glance once it's populated. */
+			.qualify-pill {
+				border: 2px solid #fae65f;
+			}
+
+			.qualify-pill .side-box-label {
+				color: #fae65f;
+			}
+
+			.content-row {
+				display: flex;
+				align-items: flex-end;
+				gap: 16px;
+			}
+
+			.side-box {
+				background: #0a0b0a;
+				border: 2px solid #64b7d5;
+				border-radius: 4px;
+				padding: 8px 12px;
+				width: 90px;
+				text-align: center;
+				overflow: hidden;
+			}
+
+			.side-box-label {
+				display: block;
+				font-size: 11px;
+				font-weight: bold;
+				color: #aaa;
+			}
+
+			.side-box-value {
+				display: block;
+				font-size: 16px;
+				font-weight: bold;
+				color: #fff;
+				margin-top: 2px;
+			}
+
+			.player-column {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 6px;
+			}
+
+			.top-strip {
+				display: flex;
+				background: #fff;
+				border: 2px solid #64b7d5;
+				border-radius: 4px;
+				overflow: hidden;
+			}
+
+			.strip-box {
+				padding: 3px 8px;
+				display: flex;
+				align-items: center;
+				gap: 4px;
+				border-right: 1px solid #64b7d5;
+			}
+
+			.strip-box:last-child {
+				border-right: none;
+			}
+
+			.strip-label {
+				font-weight: bold;
+				font-size: 12px;
+				color: #000;
+			}
+
+			.strip-value {
+				font-weight: bold;
+				font-size: 15px;
+				color: #000;
+			}
+
+			.next-pill-canvas {
+				background: #000;
+				display: block;
+			}
+
+			.strip-box.next-pill-box {
+				padding: 0;
+			}
+
+			/* Replaces drmario_speed_practice.html's split-list -- per direct instruction, no full
+			   per-level history here (an open-ended run could span many levels), just the current
+			   and most recently completed level's own duration. */
+			.level-time-box {
+				background: #0a0b0a;
+				border: 2px solid #64b7d5;
+				border-radius: 4px;
+				padding: 6px 10px;
+				min-width: 90px;
+				font-size: 12px;
+				color: #ccc;
+				text-align: center;
+			}
+
+			.bottle-border-red {
+				border: 3px solid #ee3434;
+				display: inline-block;
+				line-height: 0;
+			}
+
+			.bottle-border-cyan {
+				border: 3px solid #64b7d5;
+				display: inline-block;
+				line-height: 0;
+			}
+
+			.bottle-border-gold {
+				border: 2px solid #ebb423;
+				display: inline-block;
+				line-height: 0;
+			}
+
+			.board-wrap {
+				position: relative;
+				display: inline-block;
+				line-height: 0;
+			}
+
+			.board-canvas {
+				display: block;
+				background: #000;
+			}
+
+			.freeze-overlay {
+				position: absolute;
+				inset: 0;
+				background: rgba(15, 15, 15, 0.8);
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				gap: 10px;
+				opacity: 0;
+				pointer-events: none;
+				transition: opacity 0.4s;
+				text-align: center;
+				padding: 12px;
+				line-height: normal;
+			}
+
+			.freeze-overlay.visible {
+				opacity: 1;
+			}
+
+			.freeze-outcome {
+				margin: 0;
+				font-weight: bold;
+				font-size: 22px;
+				color: #ff0;
+			}
+
+			.freeze-stats {
+				display: flex;
+				flex-direction: column;
+				gap: 3px;
+			}
+
+			.freeze-stats p {
+				margin: 0;
+				font-size: 13px;
+				color: #ddd;
+			}
+
+			.rush {
+				color: #f80;
+				font-weight: bold;
+			}
+
+			#config-panel {
+				background: rgba(10, 11, 10, 0.7);
+				border: 1px solid #444;
+				border-radius: 4px;
+				padding: 8px 10px;
+				font-size: 12px;
+				color: #ccc;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+
+			#config-panel button {
+				font-size: 12px;
+				cursor: pointer;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="stream_bg">
+			<div id="practice-column">
+				<div class="bar-pill"><p>QUALIFYING PRACTICE</p></div>
+
+				<div class="content-row">
+					<div class="side-box qualify-pill" id="qualify-box">
+						<span class="side-box-label">QUALIFY</span>
+						<span class="side-box-value">--</span>
+					</div>
+
+					<div class="player-column">
+						<div class="top-strip">
+							<div class="strip-box">
+								<span class="strip-label">LVL</span>
+								<span class="strip-value" id="lvl">?</span>
+							</div>
+							<div class="strip-box">
+								<span class="strip-label">VIR</span>
+								<span class="strip-value" id="vir">?</span>
+							</div>
+							<div class="strip-box next-pill-box">
+								<canvas class="next-pill-canvas" id="next"></canvas>
+							</div>
+							<div class="strip-box">
+								<span class="strip-label">SPD</span>
+								<span class="strip-value" id="spd">?</span>
+							</div>
+							<div class="strip-box">
+								<span class="strip-label">TIME</span>
+								<span class="strip-value" id="time">--:--</span>
+							</div>
+						</div>
+						<div class="bottle-border-red">
+							<div class="bottle-border-cyan">
+								<div class="bottle-border-gold">
+									<div class="board-wrap">
+										<canvas class="board-canvas" id="board"></canvas>
+										<div class="freeze-overlay" id="freeze">
+											<p class="freeze-outcome" id="freeze-outcome"></p>
+											<div class="freeze-stats" id="freeze-stats">
+												<p>Total: <span id="freeze-total"></span></p>
+												<p>Qualify: <span id="freeze-qualify"></span></p>
+												<p>Pills/min: <span id="freeze-ppm"></span></p>
+												<p>Viruses/min: <span id="freeze-vpm"></span></p>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="level-time-box" id="level-times"></div>
+					</div>
+
+					<div class="side-box" id="side-box">
+						<span class="side-box-label">PILLS/MIN</span>
+						<span class="side-box-value">0.0</span>
+					</div>
+				</div>
+
+				<div id="config-panel">
+					<button id="cfg-reset">Reset Run</button>
+				</div>
+			</div>
+		</div>
+
+		<script type="module">
+			import Connection from '/js/connection.js';
+			import RoundTracker from '/producer/drmario/RoundTracker.js';
+			import LiveMetrics from '/producer/drmario/LiveMetrics.js';
+			import QualifyRunTracker from '/producer/drmario/QualifyRunTracker.js';
+			import { calculateInternalSpeed } from '/producer/drmario/InternalSpeed.js';
+			import {
+				drawCell,
+				currentVirusFrame,
+			} from '/producer/drmario/CellRenderer.js';
+			import {
+				COLOR_PALETTE,
+				COLS,
+				ROWS,
+			} from '/producer/drmario/constants.js';
+
+			// Same WS-URL/private-room wiring as drmario_speed_practice.html -- no room/admin, this
+			// is single-player only.
+			const [, , layout, secret] = location.pathname.split('/');
+			const wsProtocol = location.protocol.match(/^https/i) ? 'wss:' : 'ws:';
+			const connection = new Connection(
+				`${wsProtocol}//${location.host}/ws/view/drmario/${layout}/${secret}`
+			);
+
+			const tracker = new RoundTracker();
+
+			let piecesEnteredThisRound = 0;
+			tracker.addEventListener('round_start', () => {
+				piecesEnteredThisRound = 0;
+			});
+			tracker.addEventListener('piece_entered', () => {
+				piecesEnteredThisRound++;
+			});
+
+			// carryAcrossLevels: true -- same reasoning as every other single-player Dr Mario view,
+			// a level clear here is a continuation of the same open-ended run, not a fresh
+			// playthrough.
+			const stats = new LiveMetrics(tracker, { carryAcrossLevels: true });
+			const qualifyTracker = new QualifyRunTracker(tracker);
+
+			document.getElementById('cfg-reset').addEventListener('click', () => {
+				qualifyTracker.reset();
+				resetDisplay();
+			});
+
+			// --- Board-freeze/lookback on run end (topout/game_over) -------------------------------
+			// Reused verbatim from drmario_speed_practice.html -- see that file's own comments
+			// (themselves ported from drmario_speed.html) for the full reasoning. Unlike Speed
+			// practice, there's no "the level set finished" completion state here -- QualifyRunTracker
+			// only ever freezes on an actual topout/game_over (a real qualifying attempt is a single
+			// continuous life -- see QualifyRunTracker.js's header comment), so that's the only
+			// event this needs to watch for.
+
+			let roundEnded = false;
+			let runEnded = false;
+			let latestRunSnapshot = null;
+			let latestStatsSnapshot = null;
+
+			const BOARD_LOOKBACK_FRAMES = { topout: 1, game_over: 4 };
+			const DEFAULT_BOARD_LOOKBACK_FRAMES = 2;
+			const BOARD_HISTORY_SIZE =
+				Math.max(...Object.values(BOARD_LOOKBACK_FRAMES)) + 1;
+			let boardHistory = [];
+
+			const CLEARING_MAX_UNKNOWN_CELLS = 3;
+			let lastClearingBoard = null;
+
+			function recordBoardHistory(board) {
+				boardHistory.push(board);
+				if (boardHistory.length > BOARD_HISTORY_SIZE) boardHistory.shift();
+
+				const cells = board.flat();
+				const hasClearing = cells.some(cell => cell?.type === 'clearing');
+				const unknownCount = cells.filter(
+					cell => cell?.type === 'unknown'
+				).length;
+				if (hasClearing && unknownCount < CLEARING_MAX_UNKNOWN_CELLS) {
+					lastClearingBoard = board;
+				}
+			}
+
+			function freezeOnEarlierBoard(outcome) {
+				if (outcome === 'stage_clear' && lastClearingBoard) {
+					renderBoard(document.getElementById('board'), lastClearingBoard);
+					return;
+				}
+
+				if (boardHistory.length === 0) return;
+
+				const lookback =
+					BOARD_LOOKBACK_FRAMES[outcome] ?? DEFAULT_BOARD_LOOKBACK_FRAMES;
+				const index = Math.max(0, boardHistory.length - 1 - lookback);
+				renderBoard(document.getElementById('board'), boardHistory[index]);
+			}
+
+			tracker.addEventListener('round_end', e => {
+				roundEnded = true;
+				freezeOnEarlierBoard(e.detail.outcome);
+			});
+			tracker.addEventListener('round_start', () => {
+				if (runEnded) return; // stay frozen until an explicit reset
+				roundEnded = false;
+				boardHistory = [];
+				lastClearingBoard = null;
+			});
+
+			function resetDisplay() {
+				roundEnded = false;
+				boardHistory = [];
+				lastClearingBoard = null;
+				renderBoard(document.getElementById('board'), null);
+			}
+
+			// --- Level-time box, live timer, qualify badge -----------------------------------------
+
+			function formatTime(ms) {
+				if (ms == null) return '--:--';
+				const totalSeconds = Math.floor(ms / 1000);
+				const m = Math.floor(totalSeconds / 60);
+				const s = totalSeconds % 60;
+				return `${m}:${String(s).padStart(2, '0')}`;
+			}
+
+			function renderTimeBox(elapsedMs) {
+				document.getElementById('time').textContent = formatTime(elapsedMs);
+			}
+
+			function renderLevelTimes() {
+				const snapshot = latestRunSnapshot;
+				const el = document.getElementById('level-times');
+
+				if (!snapshot) {
+					el.innerHTML = '';
+					return;
+				}
+
+				el.innerHTML = `<div>This: ${formatTime(snapshot.currentLevelElapsedMs)}</div><div>Last: ${formatTime(snapshot.previousLevelElapsedMs)}</div>`;
+			}
+
+			// Raw OCR level, matching every other on-screen level readout in this codebase (e.g.
+			// the LVL strip box) -- an earlier version added 1 here based on a literal reading of
+			// an example in the original request, but that was confirmed live to be wrong (level
+			// 13/26 viruses remaining displayed as "14(26)", reported as incorrect).
+			function renderQualifyBadge() {
+				const el = document.getElementById('qualify-box');
+				const snapshot = latestRunSnapshot?.qualifySnapshot;
+				if (!snapshot) {
+					el.querySelector('.side-box-value').textContent = '--';
+					return;
+				}
+				el.querySelector('.side-box-value').textContent =
+					`${snapshot.level}(${snapshot.remainingViruses})`;
+			}
+
+			function updateFreezeOverlay() {
+				const overlayEl = document.getElementById('freeze');
+				overlayEl.classList.toggle('visible', runEnded);
+
+				if (!runEnded) return;
+
+				document.getElementById('freeze-outcome').textContent = 'RUN ENDED';
+
+				document.getElementById('freeze-total').textContent = formatTime(
+					latestRunSnapshot?.elapsedMs
+				);
+
+				const qualifySnapshot = latestRunSnapshot?.qualifySnapshot;
+				document.getElementById('freeze-qualify').textContent = qualifySnapshot
+					? `${qualifySnapshot.level}(${qualifySnapshot.remainingViruses})`
+					: 'not reached';
+
+				const s = latestStatsSnapshot;
+				document.getElementById('freeze-ppm').textContent = s
+					? s.piecesPerMinute.toFixed(1)
+					: '?';
+				document.getElementById('freeze-vpm').textContent = s
+					? s.virusClearsPerMinute.toFixed(1)
+					: '?';
+			}
+
+			qualifyTracker.addEventListener('run_updated', e => {
+				latestRunSnapshot = e.detail;
+				runEnded = e.detail.status === 'ended';
+
+				renderTimeBox(e.detail.elapsedMs);
+				renderLevelTimes();
+				renderQualifyBadge();
+				updateFreezeOverlay();
+			});
+
+			// Ticks the live timer smoothly between discrete RoundTracker events, and is also what
+			// drives the 30:00 qualifying-snapshot check -- QualifyRunTracker has no wall-clock
+			// cadence of its own (see checkQualifySnapshot's own doc comment).
+			setInterval(() => {
+				qualifyTracker.checkQualifySnapshot();
+				if (latestRunSnapshot?.status === 'in_progress') {
+					// getSnapshot() recomputes elapsedMs/currentLevelElapsedMs off Date.now() on every
+					// call -- the cached latestRunSnapshot from the last run_updated event is only
+					// fresh at the instant it fired (a discrete RoundTracker event: round_ready,
+					// virus_cleared, round_end, ...), so reusing it here left "time this level"
+					// visibly frozen between those events instead of counting up with the clock
+					// (reported live). Reassigning it to a freshly pulled snapshot keeps every
+					// consumer of latestRunSnapshot (this tick, and the next real event) in sync.
+					latestRunSnapshot = qualifyTracker.getSnapshot();
+					renderTimeBox(latestRunSnapshot.elapsedMs);
+					renderLevelTimes();
+				}
+			}, 250);
+
+			// --- Side stat box (pills/min by default, drought/rush callout when active) -----------
+
+			const DROUGHT_DISPLAY_THRESHOLD = 5;
+
+			function rgbFor(colorName) {
+				const rgb = COLOR_PALETTE[colorName];
+				return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+			}
+
+			function worstDrought(colorDroughts) {
+				const [color, count] = Object.entries(colorDroughts).reduce(
+					(best, cur) => (cur[1] > best[1] ? cur : best)
+				);
+				return count < DROUGHT_DISPLAY_THRESHOLD ? null : { color, count };
+			}
+
+			function renderSideBox(s) {
+				const el = document.getElementById('side-box');
+				if (s.isRushing) {
+					el.innerHTML = `<span class="side-box-label rush">RUSH</span><span class="side-box-value rush">x${s.rushStreak}</span>`;
+					return;
+				}
+				const drought = worstDrought(s.colorDroughts);
+				if (drought) {
+					const color = rgbFor(drought.color);
+					el.innerHTML = `<span class="side-box-label" style="color: ${color}">DROUGHT</span><span class="side-box-value" style="color: ${color}">x${drought.count}</span>`;
+					return;
+				}
+				el.innerHTML = `<span class="side-box-label">PILLS/MIN</span><span class="side-box-value">${s.piecesPerMinute.toFixed(1)}</span>`;
+			}
+
+			stats.addEventListener('stats_updated', e => {
+				if (runEnded) return; // frozen -- don't let numbers drift post-run
+				latestStatsSnapshot = e.detail;
+				renderSideBox(e.detail);
+			});
+
+			// --- Bottle/next-pill rendering (sprite-accurate, via CellRenderer.js) ----------------
+
+			const CELL_PX = 28;
+			const NEXT_PILL_CELL_PX = 16;
+
+			function renderBoard(canvas, board) {
+				const ctx = canvas.getContext('2d');
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+				if (!board) return;
+
+				const virusFrame = currentVirusFrame();
+				board.forEach((row, rowIdx) => {
+					row.forEach((cell, colIdx) => {
+						drawCell(
+							ctx,
+							colIdx * CELL_PX,
+							rowIdx * CELL_PX,
+							CELL_PX,
+							cell,
+							virusFrame
+						);
+					});
+				});
+			}
+
+			function renderNextPill(canvas, nextPill) {
+				const ctx = canvas.getContext('2d');
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+				if (!nextPill) return;
+
+				const virusFrame = currentVirusFrame();
+				drawCell(ctx, 0, 0, NEXT_PILL_CELL_PX, nextPill.left, virusFrame);
+				drawCell(
+					ctx,
+					NEXT_PILL_CELL_PX,
+					0,
+					NEXT_PILL_CELL_PX,
+					nextPill.right,
+					virusFrame
+				);
+			}
+
+			const boardCanvas = document.getElementById('board');
+			boardCanvas.width = COLS * CELL_PX;
+			boardCanvas.height = ROWS * CELL_PX;
+
+			const nextPillCanvas = document.getElementById('next');
+			nextPillCanvas.width = 2 * NEXT_PILL_CELL_PX;
+			nextPillCanvas.height = NEXT_PILL_CELL_PX;
+
+			function renderFrame(data) {
+				if (!roundEnded && data.board) {
+					renderBoard(document.getElementById('board'), data.board);
+					recordBoardHistory(data.board);
+				}
+
+				renderNextPill(document.getElementById('next'), data.nextPill);
+
+				const internalSpeed = calculateInternalSpeed(
+					data.speed,
+					piecesEnteredThisRound
+				);
+				document.getElementById('lvl').textContent = data.level ?? '?';
+				document.getElementById('vir').textContent = data.virus ?? '?';
+				document.getElementById('spd').textContent = internalSpeed ?? '?';
+
+				tracker.processFrame(data);
+			}
+
+			const API = {
+				frame(_player_idx, data) {
+					if (data.layout === 'single_player') renderFrame(data);
+				},
+				message() {}, // noop -- chat messages, same as every other Dr Mario view
+			};
+
+			connection.onMessage = function (frame) {
+				try {
+					const [method, ...args] = frame;
+					API[method]?.apply(API, args);
+				} catch (e) {
+					console.error(e);
+				}
+			};
+		</script>
+	</body>
+</html>
