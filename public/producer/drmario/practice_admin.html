@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Dr. Mario Solo Practice Admin</title>
+		<style>
+			body {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				background: #111;
+				color: #eee;
+				padding: 16px;
+			}
+			h1 {
+				font-size: 1.2rem;
+			}
+			h3 {
+				font-size: 1rem;
+				margin-bottom: 4px;
+			}
+			section {
+				margin-bottom: 20px;
+			}
+			label {
+				margin-right: 4px;
+			}
+			input[type='text'],
+			input[type='number'] {
+				width: 80px;
+			}
+			#admin-secret {
+				width: 240px;
+			}
+			.hint {
+				color: #999;
+				font-size: 0.85rem;
+			}
+			#admin-status {
+				font-weight: bold;
+			}
+			#admin-status.connected {
+				color: #6f6;
+			}
+			#admin-status.disconnected {
+				color: #f66;
+			}
+			button {
+				margin-right: 8px;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Dr. Mario Solo Practice Admin</h1>
+		<p class="hint">
+			Controls for drmario_speed_practice.html/drmario_qualify_practice.html,
+			off the broadcast page itself -- this page is never shown on stream.
+			Connect once with your own account secret (the same one producer.html
+			uses); any commands below reach whichever of those two views is currently
+			open, since both attach to this same account's private room.
+		</p>
+
+		<section id="admin-connection-section">
+			<h3>1. Connect</h3>
+			<p class="hint">Your own account secret. Saved automatically.</p>
+			<label for="admin-secret">Secret</label>
+			<input id="admin-secret" type="text" autocomplete="off" />
+			<button id="admin-connect">Connect</button>
+			<button id="admin-disconnect">Disconnect</button>
+			<span id="admin-status" class="disconnected">Disconnected</span>
+		</section>
+
+		<section id="speed-practice-section">
+			<h3>2. Speed practice</h3>
+			<label for="level-start">Start level</label>
+			<input id="level-start" type="number" min="0" value="0" />
+			<label for="level-count">Level count</label>
+			<input id="level-count" type="number" min="1" value="4" />
+			<button id="levelset-set">Set level set</button>
+			<br /><br />
+			<button id="speed-reset-run">Reset run</button>
+		</section>
+
+		<section id="qualify-practice-section">
+			<h3>3. Qualifying practice</h3>
+			<button id="qualify-reset-run">Reset run</button>
+		</section>
+
+		<script type="module" src="./practice_admin.js"></script>
+	</body>
+</html>

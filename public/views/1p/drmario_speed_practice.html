@@ -223,39 +223,6 @@
 				color: #f80;
 				font-weight: bold;
 			}
-
-			/* Unlike drmario_speed.html (server-authoritative level set, set by an admin), this is a
-			   solo view with no room/admin behind it -- the practicer configures their own level set
-			   directly here. Kept small/muted since it's chrome for the practicer, not part of the
-			   "broadcast" -- crop it out of the OBS source if it's not wanted on screen. */
-			#config-panel {
-				background: rgba(10, 11, 10, 0.7);
-				border: 1px solid #444;
-				border-radius: 4px;
-				padding: 8px 10px;
-				font-size: 12px;
-				color: #ccc;
-				display: flex;
-				align-items: center;
-				gap: 8px;
-				flex-wrap: wrap;
-			}
-
-			#config-panel label {
-				display: flex;
-				align-items: center;
-				gap: 4px;
-			}
-
-			#config-panel input[type='number'] {
-				width: 44px;
-				font-size: 12px;
-			}
-
-			#config-panel button {
-				font-size: 12px;
-				cursor: pointer;
-			}
 		</style>
 	</head>
 	<body>
@@ -307,17 +274,6 @@
 						<div class="split-list" id="splits"></div>
 					</div>
 				</div>
-
-				<div id="config-panel">
-					<label
-						>Start level <input id="cfg-start" type="number" min="0" max="20"
-					/></label>
-					<label
-						>Levels <input id="cfg-count" type="number" min="1" max="10"
-					/></label>
-					<button id="cfg-apply">Apply</button>
-					<button id="cfg-reset">Reset Run</button>
-				</div>
 			</div>
 		</div>
 
@@ -340,7 +296,9 @@
 			// Same as every other Dr Mario view -- the WS paths live in their own namespace, so
 			// this can't rely on Connection()'s "derive it from location.pathname" convenience.
 			// Attaches to the practicer's own private room, exactly like drmario_single(_nes).html
-			// -- no room/admin machinery needed, since this is single-player only.
+			// -- this connection also receives whatever practice_admin.html sends (see its own
+			// speedPracticeSetLevelSet/speedPracticeResetRun handlers in the API object below),
+			// since that page relays straight into this same private room server-side.
 			const [, , layout, secret] = location.pathname.split('/');
 			const wsProtocol = location.protocol.match(/^https/i) ? 'wss:' : 'ws:';
 			const connection = new Connection(
@@ -363,10 +321,16 @@
 			const stats = new LiveMetrics(tracker, { carryAcrossLevels: true });
 			const speedTracker = new SpeedRunTracker(tracker);
 
-			// --- Level set config (local to this view -- no admin/room behind a solo practice page) --
+			// --- Level set config -----------------------------------------------------------------
+			// Driven by practice_admin.html over this same connection (speedPracticeSetLevelSet/
+			// speedPracticeResetRun messages, handled in the API object below) rather than on-page
+			// controls -- an earlier version had the config panel directly on this page, but that
+			// was reported live as awkward to reach in OBS (only reachable via Interact mode on the
+			// broadcast source itself). Still persisted to localStorage so a reload of this OBS
+			// source (or a plain page refresh) remembers the last-applied level set even if the
+			// admin page isn't currently open to resend it.
 
-			const START_LEVEL_KEY = 'drmario_speed_practice_start_level';
-			const LEVEL_COUNT_KEY = 'drmario_speed_practice_level_count';
+			const LEVEL_SET_KEY = 'drmario_speed_practice_level_set';
 
 			let levelSet = [];
 
@@ -379,38 +343,14 @@
 						: `LEVELS ${levelSet[0]}-${levelSet[levelSet.length - 1]}`;
 			}
 
-			function applyLevelSet(start, count) {
-				localStorage.setItem(START_LEVEL_KEY, start);
-				localStorage.setItem(LEVEL_COUNT_KEY, count);
-				levelSet = Array.from({ length: count }, (_, i) => start + i);
+			function applyLevelSet(levels) {
+				localStorage.setItem(LEVEL_SET_KEY, JSON.stringify(levels));
+				levelSet = levels;
 				renderLevelSetLabel();
 				speedTracker.setLevelSet(levelSet);
 				resetDisplay();
 				renderSplitList();
 			}
-
-			const startInput = document.getElementById('cfg-start');
-			const countInput = document.getElementById('cfg-count');
-
-			const savedStart = parseInt(localStorage.getItem(START_LEVEL_KEY), 10);
-			const savedCount = parseInt(localStorage.getItem(LEVEL_COUNT_KEY), 10);
-			startInput.value = Number.isFinite(savedStart) ? savedStart : 0;
-			countInput.value =
-				Number.isFinite(savedCount) && savedCount > 0 ? savedCount : 4;
-
-			document.getElementById('cfg-apply').addEventListener('click', () => {
-				const start = Math.max(0, parseInt(startInput.value, 10) || 0);
-				const count = Math.max(1, parseInt(countInput.value, 10) || 1);
-				applyLevelSet(start, count);
-			});
-
-			// Manual override -- lets the practicer restart the current attempt (e.g. after a
-			// topout they don't want counted, or before beginning a fresh attempt at the same set)
-			// without needing to touch the level-set config itself.
-			document.getElementById('cfg-reset').addEventListener('click', () => {
-				speedTracker.reset();
-				resetDisplay();
-			});
 
 			// --- Board-freeze/lookback on run completion ------------------------------------------
 			// Reused verbatim from drmario_speed.html (see its own header comments for the full
@@ -670,6 +610,18 @@
 				frame(_player_idx, data) {
 					if (data.layout === 'single_player') renderFrame(data);
 				},
+				// From practice_admin.html -- see routes/websocket.js's practice-admin relay
+				// (a dumb sendToViews() broadcast, so this view is responsible for only reacting to
+				// the commands it recognizes; drmario_qualify_practice.html's own admin commands use
+				// distinct names precisely so the two views attached to the same room never trigger
+				// each other).
+				speedPracticeSetLevelSet(levels) {
+					applyLevelSet(levels);
+				},
+				speedPracticeResetRun() {
+					speedTracker.reset();
+					resetDisplay();
+				},
 				message() {}, // noop -- chat messages, same as every other Dr Mario view
 			};
 
@@ -683,14 +635,24 @@
 			};
 
 			// Run last, after every function/state above this point has been defined -- applying
-			// the saved/default level set immediately calls into resetDisplay() (board-freeze
-			// state) and renderSplitList()/renderBoard(), which reference `let` bindings declared
-			// further down this same module scope; calling this any earlier throws a
-			// "before initialization" error that aborts the whole script before connection.onMessage
-			// above is even assigned, silently breaking the entire view (confirmed live).
+			// a level set immediately calls into resetDisplay() (board-freeze state) and
+			// renderSplitList()/renderBoard(), which reference `let` bindings declared further down
+			// this same module scope; calling this any earlier throws a "before initialization"
+			// error that aborts the whole script before connection.onMessage above is even
+			// assigned, silently breaking the entire view (confirmed live). Seeds a starting level
+			// set from whatever was last applied (so this view isn't blank before practice_admin
+			// .html ever connects, e.g. right after an OBS restart) -- the admin's own
+			// speedPracticeSetLevelSet command, handled above, can always override it later.
+			let savedLevelSet = null;
+			try {
+				savedLevelSet = JSON.parse(localStorage.getItem(LEVEL_SET_KEY));
+			} catch (_err) {
+				// ignore -- falls through to the default below
+			}
 			applyLevelSet(
-				parseInt(startInput.value, 10),
-				parseInt(countInput.value, 10)
+				Array.isArray(savedLevelSet) && savedLevelSet.length
+					? savedLevelSet
+					: [0, 1, 2, 3]
 			);
 		</script>
 	</body>

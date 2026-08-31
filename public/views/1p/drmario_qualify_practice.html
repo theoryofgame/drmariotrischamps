@@ -232,23 +232,6 @@
 				color: #f80;
 				font-weight: bold;
 			}
-
-			#config-panel {
-				background: rgba(10, 11, 10, 0.7);
-				border: 1px solid #444;
-				border-radius: 4px;
-				padding: 8px 10px;
-				font-size: 12px;
-				color: #ccc;
-				display: flex;
-				align-items: center;
-				gap: 8px;
-			}
-
-			#config-panel button {
-				font-size: 12px;
-				cursor: pointer;
-			}
 		</style>
 	</head>
 	<body>
@@ -310,10 +293,6 @@
 						<span class="side-box-value">0.0</span>
 					</div>
 				</div>
-
-				<div id="config-panel">
-					<button id="cfg-reset">Reset Run</button>
-				</div>
 			</div>
 		</div>
 
@@ -333,8 +312,9 @@
 				ROWS,
 			} from '/producer/drmario/constants.js';
 
-			// Same WS-URL/private-room wiring as drmario_speed_practice.html -- no room/admin, this
-			// is single-player only.
+			// Same WS-URL/private-room wiring as drmario_speed_practice.html, including receiving
+			// practice_admin.html's commands over this same connection (see qualifyPracticeResetRun
+			// in the API object below).
 			const [, , layout, secret] = location.pathname.split('/');
 			const wsProtocol = location.protocol.match(/^https/i) ? 'wss:' : 'ws:';
 			const connection = new Connection(
@@ -356,11 +336,6 @@
 			// playthrough.
 			const stats = new LiveMetrics(tracker, { carryAcrossLevels: true });
 			const qualifyTracker = new QualifyRunTracker(tracker);
-
-			document.getElementById('cfg-reset').addEventListener('click', () => {
-				qualifyTracker.reset();
-				resetDisplay();
-			});
 
 			// --- Board-freeze/lookback on run end (topout/game_over) -------------------------------
 			// Reused verbatim from drmario_speed_practice.html -- see that file's own comments
@@ -637,6 +612,12 @@
 			const API = {
 				frame(_player_idx, data) {
 					if (data.layout === 'single_player') renderFrame(data);
+				},
+				// From practice_admin.html -- see drmario_speed_practice.html's own comment on its
+				// API object for why this uses a distinct, view-specific command name.
+				qualifyPracticeResetRun() {
+					qualifyTracker.reset();
+					resetDisplay();
 				},
 				message() {}, // noop -- chat messages, same as every other Dr Mario view
 			};

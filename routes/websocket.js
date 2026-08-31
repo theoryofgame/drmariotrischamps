@@ -155,6 +155,55 @@ export default function init(server, wss) {
 			return;
 		}
 
+		// Dr Mario solo-practice admin channel -- a dumb relay (see the connection handler below:
+		// it forwards whatever it receives straight to the private room's own views via
+		// sendToViews(), no domain-level command parsing needed here) letting drmario_speed_practice
+		// .html/drmario_qualify_practice.html be controlled from a separate page instead of their
+		// own on-page controls, which were reported live as awkward to reach in OBS (only via
+		// Interact mode on the broadcast source itself). Mirrors the Speed admin route immediately
+		// above but resolves the practicer's own ordinary private room, not a dedicated room class
+		// -- unlike Speed, there's no multi-player state to hold server-side, so no new domain file
+		// was needed, just this relay. Checked before the producer regex below since that one is
+		// loose enough to otherwise swallow this path too.
+		m = request.nc_url.pathname.match(
+			/^\/ws\/room\/drmario\/practice\/admin\/([a-zA-Z0-9-]+)/
+		);
+
+		request.is_drmario_practice_secret_admin = !!m;
+
+		if (request.is_drmario_practice_secret_admin) {
+			const connecting_user_secret = m[1];
+
+			const connecting_user = await UserDAO.getUserBySecret(
+				connecting_user_secret
+			);
+
+			if (!connecting_user) {
+				socket.write('HTTP/1.1 404 Connecting User Not Found\r\n\r\n');
+				socket.destroy();
+				return;
+			}
+
+			if (!request.session) {
+				request.session = { save: passThrough }; // should never happen
+			}
+
+			request.session.user = {
+				id: connecting_user.id,
+				login: connecting_user.login,
+				secret: connecting_user.secret,
+				profile_image_url: connecting_user.profile_image_url,
+			};
+
+			request.session.save(() => {
+				wss.handleUpgrade(request, socket, head, function (ws) {
+					wss.emit('connection', ws, request);
+				});
+			});
+
+			return;
+		}
+
 		m = request.nc_url.pathname.match(
 			/^\/ws\/room\/drmario\/producer\/([a-zA-Z0-9-]+)/
 		);
@@ -448,6 +497,16 @@ export default function init(server, wss) {
 		} else if (request.is_drmario_speed_secret_admin) {
 			console.log(`DrMarioSpeedRoom: ${user.login}: Admin connected`);
 			user.getDrMarioSpeedRoom().setAdmin(connection);
+		} else if (request.is_drmario_practice_secret_admin) {
+			console.log(`Dr Mario Practice: ${user.login}: Admin connected`);
+			// Deliberately not room.handleProducerMessage() -- that method exists for relaying
+			// actual OCR producer frames (and tags array messages with a player-slot index that
+			// this admin's own command messages don't want, e.g. ['speedPracticeSetLevelSet',
+			// levels] would arrive at the view as (0, levels) instead of (levels)). sendToViews()
+			// is the same direct, untagged broadcast DrMarioSpeedRoom's own admin commands already
+			// use.
+			const room = user.getDrMarioPrivateRoom();
+			connection.on('message', message => room.sendToViews(message));
 		} else if (request.is_secret_view) {
 			console.log(
 				'WS: Adding View',
