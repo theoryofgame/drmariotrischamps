@@ -120,6 +120,23 @@ describe('SpeedRunTracker', () => {
 		expect(tracker.getSnapshot().splits[4]).toBe(10000);
 	});
 
+	// See QualifyRunTracker.js's own test of the same name for the full live-report reasoning --
+	// this tracker shares the identical split-timing mechanism (and vulnerability).
+	it('falls back to round_end time when pendingClearTimestamp lags implausibly far behind it', () => {
+		roundTracker.processFrame(frame({ level: 4, virus: 0 })); // round_start
+		roundTracker.processFrame(frame({ level: 4, virus: 20 })); // round_ready
+
+		jest.setSystemTime(new Date('2024-01-01T00:00:10Z')); // virus hits 0 at t=10s
+		roundTracker.processFrame(frame({ level: 4, virus: 0 }));
+
+		// something stalls play for 17s -- e.g. a pause -- before round_end actually confirms the
+		// clear at t=27s, well past MAX_CLEAR_TIMESTAMP_LAG_MS
+		jest.setSystemTime(new Date('2024-01-01T00:00:27Z'));
+		roundTracker.processFrame(frame({ result: 'stage_clear' }));
+
+		expect(tracker.getSnapshot().splits[4]).toBe(27000); // the real 27s, not the stale 10s
+	});
+
 	it('a mid-run topout-and-retry leaves runStartTime and prior splits untouched, and bumps attemptsPerLevel', () => {
 		populateAndClear(roundTracker, 4, 20);
 		roundTracker.processFrame(frame({ result: 'stage_clear' })); // level 4 done

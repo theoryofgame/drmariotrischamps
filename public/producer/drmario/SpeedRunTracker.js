@@ -24,6 +24,12 @@ const STATUS = {
 	COMPLETE: 'complete',
 };
 
+// Reported live (on QualifyRunTracker.js, which shares this exact same split-timing mechanism --
+// see #onRoundEnd's own comment): a level's own split can freeze at a stale virus-zero-crossing
+// timestamp while wall-clock time keeps advancing normally, if something stalls play between the
+// last virus clearing and the STAGE CLEAR screen actually being confirmed (e.g. a pause).
+const MAX_CLEAR_TIMESTAMP_LAG_MS = 5000;
+
 export default class SpeedRunTracker extends EventTarget {
 	#levelSet = [];
 	#status = STATUS.IDLE;
@@ -145,7 +151,15 @@ export default class SpeedRunTracker extends EventTarget {
 		const isExpectedLevel = this.#currentLevel === level;
 
 		if (outcome === 'stage_clear' && isExpectedLevel) {
-			const clearedAt = this.#pendingClearTimestamp ?? Date.now();
+			// See MAX_CLEAR_TIMESTAMP_LAG_MS's own comment and QualifyRunTracker.js's #onRoundEnd
+			// for the full reasoning -- a stale pendingClearTimestamp under-reports this level's
+			// split and leaks the missing time onto the next level's own live elapsed display.
+			const now = Date.now();
+			const clearedAt =
+				this.#pendingClearTimestamp !== null &&
+				now - this.#pendingClearTimestamp <= MAX_CLEAR_TIMESTAMP_LAG_MS
+					? this.#pendingClearTimestamp
+					: now;
 			this.#splits[level] = clearedAt - this.#runStartTime;
 
 			if (this.#currentLevelSetIndex === this.#levelSet.length - 1) {

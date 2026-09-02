@@ -29,6 +29,12 @@ const STATUS = {
 
 const QUALIFY_THRESHOLD_MS = 30 * 60 * 1000;
 
+// Reported live: a level's own split can freeze at a stale virus-zero-crossing timestamp while
+// wall-clock time keeps advancing normally, if something stalls play between the last virus
+// clearing and the STAGE CLEAR screen actually being confirmed (e.g. a pause) -- see
+// #onRoundEnd's own comment for the exact reasoning.
+const MAX_CLEAR_TIMESTAMP_LAG_MS = 5000;
+
 export default class QualifyRunTracker extends EventTarget {
 	#status = STATUS.IDLE;
 	#currentLevel = null;
@@ -120,7 +126,25 @@ export default class QualifyRunTracker extends EventTarget {
 		if (this.#status !== STATUS.IN_PROGRESS) return;
 
 		if (outcome === 'stage_clear') {
-			const clearedAt = this.#pendingClearTimestamp ?? Date.now();
+			// pendingClearTimestamp is normally within a fraction of a second of this round_end
+			// firing (the STAGE CLEAR animation/OCR confirmation lag) -- but if something stalls
+			// play in between (a pause, a capture/OCR hang), that stale timestamp can lag *this*
+			// moment by a lot, which both under-reports this level's own split (frozen at the
+			// stale, too-early timestamp) and leaks the missing time onto the next level's live
+			// "current level elapsed" display (built from wall-clock elapsed minus this split --
+			// see getSnapshot() -- so a too-small split makes the next level look like it already
+			// had a head start). Confirmed live: a 17s gap left a level's split reading 10s
+			// instead of the real 27s, with the missing 17s showing up as already-elapsed time on
+			// the very next level. Past MAX_CLEAR_TIMESTAMP_LAG_MS, trust this round_end's own
+			// timestamp instead -- less "precise" than the virus-zero-crossing moment in the
+			// ordinary case, but never wrong in the direction that corrupts the next level's
+			// display.
+			const now = Date.now();
+			const clearedAt =
+				this.#pendingClearTimestamp !== null &&
+				now - this.#pendingClearTimestamp <= MAX_CLEAR_TIMESTAMP_LAG_MS
+					? this.#pendingClearTimestamp
+					: now;
 			this.#splits[this.#currentLevel] = clearedAt - this.#runStartTime;
 			this.#completedLevels.push(this.#currentLevel);
 		} else {

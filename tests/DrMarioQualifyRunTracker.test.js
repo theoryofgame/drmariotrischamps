@@ -119,6 +119,30 @@ describe('QualifyRunTracker', () => {
 		expect(tracker.getSnapshot().previousLevelElapsedMs).toBe(10000);
 	});
 
+	// Reproduces a live report: a level cleared (real, wall-clock time) in 27s, but the recorded
+	// split read 10s, with the missing 17s showing up as already-elapsed time on the *next*
+	// level's own live timer. Root cause: pendingClearTimestamp froze at the virus-zero-crossing
+	// moment (t=10s) while something (a pause, here) stalled play for 17s before round_end
+	// actually confirmed stage_clear at t=27s -- see #onRoundEnd's own comment.
+	it('falls back to round_end time when pendingClearTimestamp lags implausibly far behind it', () => {
+		roundTracker.processFrame(frame({ level: 0, virus: 0 })); // round_start
+		roundTracker.processFrame(frame({ level: 0, virus: 4 })); // round_ready
+
+		jest.setSystemTime(new Date('2024-01-01T00:00:10Z')); // virus hits 0 at t=10s
+		roundTracker.processFrame(frame({ level: 0, virus: 0 }));
+
+		// something stalls play for 17s -- e.g. a pause -- before round_end actually confirms the
+		// clear at t=27s, well past MAX_CLEAR_TIMESTAMP_LAG_MS
+		jest.setSystemTime(new Date('2024-01-01T00:00:27Z'));
+		roundTracker.processFrame(frame({ result: 'stage_clear' }));
+		roundTracker.processFrame(frame({ level: 1, virus: 0 }));
+
+		// the split reflects the real 27s, not the stale 10s
+		expect(tracker.getSnapshot().previousLevelElapsedMs).toBe(27000);
+		// and the next level's own live timer starts fresh at 0, not with 17s already on it
+		expect(tracker.getSnapshot().currentLevelElapsedMs).toBe(0);
+	});
+
 	it('ends the run on topout/game_over rather than treating it as a same-level retry', () => {
 		roundTracker.processFrame(frame({ level: 0, virus: 0 })); // round_start
 		jest.setSystemTime(new Date('2024-01-01T00:02:00Z'));
