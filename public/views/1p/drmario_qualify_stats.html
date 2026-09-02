@@ -133,7 +133,9 @@
 				`${wsProtocol}//${location.host}/ws/view/drmario/${layout}/${secret}`
 			);
 
-			const tracker = new RoundTracker();
+			// useNextPillBlankDetection: single-player only -- see drmario_single.html's own
+			// comment on this same option for why.
+			const tracker = new RoundTracker({ useNextPillBlankDetection: true });
 
 			let piecesEnteredThisRound = 0;
 			tracker.addEventListener('round_start', () => {

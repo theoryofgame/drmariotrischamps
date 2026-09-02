@@ -113,7 +113,9 @@
 
 			// Single-player has no shared round boundary to sync across bottles the way versus
 			// does (see RoundTracker.js's header comment) -- just the one instance.
-			const tracker = new RoundTracker();
+			// useNextPillBlankDetection: single-player only -- see drmario_single.html's own
+			// comment on this same option for why.
+			const tracker = new RoundTracker({ useNextPillBlankDetection: true });
 
 			// The displayed LOW/MED/HI speed isn't the game's real internal fall-speed -- see
 			// InternalSpeed.js. That calculation needs a running count of pills entered since the

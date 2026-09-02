@@ -29,18 +29,40 @@
 //   round's initial population (viruses are placed one at a time up to 4*(level+1) for that
 //   level) before counting down as the player clears them. See PHASE below.
 // - There's no on-screen piece counter to read the way Tetris's T/J/Z/O/S/L/I boxes are. Instead,
-//   piece_entered fires when a player-controlled piece spawns, detected by position rather than
-//   raw color. Per confirmed report: a player piece always spawns horizontally at the same fixed
-//   pair of middle columns (SPAWN_COL_LEFT/RIGHT below), never anywhere else -- and separately,
-//   versus mode can add "garbage" to a bottle as loose single half-pills (PILL_SHAPE_TEMPLATES'
-//   'single' shape -- see templates.js) that can land in *any* column, 2/3/4 at once with at
-//   least one empty column between each (confirmed report), never the paired-horizontal shape a
-//   real spawn is. So watching specifically that fixed pair by shape, not just position, both
-//   catches every genuine spawn and won't misidentify a garbage half landing on the spawn columns
-//   as one -- see #detectGarbageEntries for the separate garbage_entered event this same
-//   distinction makes possible. If a garbage half lands on an already-occupied column it
-//   overwrites what was there (confirmed report); #detectGarbageEntries deliberately doesn't
-//   track that case, only a column that was genuinely empty beforehand.
+//   piece_entered fires when a player-controlled piece spawns. There are now two independent
+//   detection strategies, selected per instance by the constructor's useNextPillBlankDetection
+//   option (default false) -- see #detectPieceEntriesViaNextPillBlank vs.
+//   #detectPieceEntriesViaSpawnPosition below for the two implementations. Callers pick single-
+//   player's newer, more reliable strategy explicitly; versus keeps the original one by default.
+//
+//   **Why two strategies, not one:** the newer approach (single-player only) was added after a
+//   direct report that the original spawn-position approach was missing real spawns on some
+//   streams -- specifically at a lower-than-expected capture frame rate, and/or when a player
+//   moves pills quickly, either of which can mean no polled frame ever actually catches the
+//   spawn-pair cells simultaneously occupied. It keys off the next-pill preview instead: reported
+//   live to reliably go blank for a few frames during the real game's own pill-throw animation,
+//   then show the *following* piece once readable again -- so watching for that blank-then-
+//   readable cycle confirms a piece has fully entered without ever needing to catch the spawn
+//   moment on the board itself, and the piece's own color/shape comes from whatever the preview
+//   showed right before it went blank (that's the piece being thrown), not from reading the board
+//   at all. This can't be the *only* strategy, though: confirmed live that versus mode's own
+//   next-pill preview (in each bottle's neck, not above Mario's head) simply does not blank the
+//   same way single-player's does -- the animation itself is different there, not a calibration
+//   or capture-quality gap. So versus keeps the original, board-position-based approach
+//   unchanged, described next.
+//
+//   **Board-position strategy** (`#detectPieceEntriesViaSpawnPosition`, versus's default): a
+//   player piece always spawns horizontally at the same fixed pair of middle columns
+//   (SPAWN_COL_LEFT/RIGHT below), never anywhere else -- and separately, versus mode can add
+//   "garbage" to a bottle as loose single half-pills (PILL_SHAPE_TEMPLATES' 'single' shape -- see
+//   templates.js) that can land in *any* column, 2/3/4 at once with at least one empty column
+//   between each (confirmed report), never the paired-horizontal shape a real spawn is. So
+//   watching specifically that fixed pair by shape, not just position, both catches every genuine
+//   spawn and won't misidentify a garbage half landing on the spawn columns as one -- see
+//   #detectGarbageEntries for the separate garbage_entered event this same distinction makes
+//   possible. If a garbage half lands on an already-occupied column it overwrites what was there
+//   (confirmed report); #detectGarbageEntries deliberately doesn't track that case, only a column
+//   that was genuinely empty beforehand.
 //
 //   An earlier version fired on every empty->occupied transition of the spawn pair, aggregated
 //   as one flag. That double-counted real, ordinary player input: sliding a piece off the spawn
@@ -48,8 +70,8 @@
 //   horizontal, which reverses which color sits on which side) both leave, then re-fill, the
 //   spawn pair without a real spawn happening. Fixed by requiring positive evidence the
 //   previously-reported piece has actually left play before re-arming detection -- see
-//   #armed/#detectPieceEntries -- using two independent, complementary signals, either being
-//   enough:
+//   #armed/#detectPieceEntriesViaSpawnPosition -- using two independent, complementary signals,
+//   either being enough:
 //     - the next-pill preview changing. It only updates on a genuine spawn (confirmed via real
 //       captures -- see BoardOCR.identifyNextPill's doc comment -- to stay constant across frames
 //       while the current piece is in play, including while the player moves/rotates it). Blind
@@ -71,21 +93,19 @@
 //   conjunction (both a coincidental color match *and* an early lock) can still fool this. This is
 //   a heuristic that hasn't been validated against real captured timing data (only against
 //   hand-built frame sequences and one live-harness repro) -- worth rechecking if a live session
-//   ever suggests otherwise.
+//   ever suggests otherwise. This is also the strategy least susceptible to the low-frame-rate
+//   problem that motivated the newer one above, since real descent and rotation both take several
+//   frames to happen, unlike a single-poll spawn-pair snapshot -- but it can still, in principle,
+//   miss a spawn entirely if a piece is moved off the spawn pair and locked before any polled
+//   frame ever catches both halves occupied there together.
 //
-// Three more events exist purely to feed a stats layer built on top of this file (see
+// Two more events exist purely to feed a stats layer built on top of this file (see
 // LiveMetrics.js), not for round-lifecycle purposes: virus_cleared fires whenever the tracked
 // virus count drops during PLAYING (silent before now -- #virusCount was only ever read
-// internally, e.g. to freeze it into round_end's detail), garbage_entered's cells gain a
+// internally, e.g. to freeze it into round_end's detail), and garbage_entered's cells gain a
 // restRows field (plus a wave-level maxRestRows) -- a purely geometric "how many rows will this
 // newly-arrived half fall before resting, inclusive of the spawn row" computed once at the
-// moment of arrival using the board already in hand, not tracked live as it actually falls --
-// and pill_thrown (see #detectPillThrown), added after a direct report that the on-screen
-// next-pill preview reliably goes blank for a few frames during the real game's own pill-throw
-// animation, once per piece: a simpler, more direct signal for LiveMetrics.js's pieces/minute
-// pace stat than #detectPieceEntries' own spawn-pair-occupancy approach below, which stays
-// exactly as it is (unchanged, still what rush-streak/color-drought/InternalSpeed's own piece
-// count key off) since this new event carries no piece identity (cells/colors) to feed them.
+// moment of arrival using the board already in hand, not tracked live as it actually falls.
 //
 // One instance tracks one bottle. Versus mode (two independent bottles) should use two
 // instances, the same way Tetris runs one GameTracker per OcrPlayer.
@@ -187,19 +207,36 @@ function restRowsForColumn(board, col) {
 }
 
 export default class RoundTracker extends EventTarget {
+	#useNextPillBlankDetection;
+
 	#phase = PHASE.UNKNOWN;
 	#roundId = 0;
 	#level = null;
 	#virusTargetCount = null;
 	#virusCount = null;
+
+	// Board-position strategy state (versus's default) -- see #detectPieceEntriesViaSpawnPosition.
 	#spawnPairOccupied = false;
 	#armed = true; // ready to treat the next spawn-pair occupation as a genuine new piece
-	#nextPillBlank = null; // null = not yet observed this round; see #detectPillThrown
 	#lastNextPillKey = null;
 	#descentBaseline = null;
+
+	// Next-pill-blank strategy state (single-player's opt-in) -- see
+	// #detectPieceEntriesViaNextPillBlank. #nextPillBlank: null = not yet observed this round.
+	#lastReadableNextPill = null;
+	#pendingThrownPill = null;
+	#nextPillBlank = null;
+
 	#topRowEmpty = new Array(COLS).fill(true); // last frame's row-0 occupancy, per column
 	#topRowConfirmedEmpty = false; // see #detectGarbageEntries -- guards against artifacts left over from the previous round
 	#endedExternally = false; // ended via endRound(), not this bottle's own result -- see syncRoundStart()
+
+	// useNextPillBlankDetection: opt-in, single-player only -- see the header comment above for
+	// why versus can't use this strategy and must keep the default.
+	constructor({ useNextPillBlankDetection = false } = {}) {
+		super();
+		this.#useNextPillBlankDetection = useNextPillBlankDetection;
+	}
 
 	// frame: { board, level, virus, result, hasBottle, isTitleScreen, ... } -- i.e. one bottle's
 	// worth of a DrMarioOCR result (single-player's top-level shape, or versus's player1/player2
@@ -328,8 +365,11 @@ export default class RoundTracker extends EventTarget {
 			}
 		}
 
-		this.#detectPillThrown(frame.nextPill);
-		this.#detectPieceEntries(frame.board, frame.nextPill);
+		if (this.#useNextPillBlankDetection) {
+			this.#detectPieceEntriesViaNextPillBlank(frame.nextPill);
+		} else {
+			this.#detectPieceEntriesViaSpawnPosition(frame.board, frame.nextPill);
+		}
 		this.#detectGarbageEntries(frame.board);
 	}
 
@@ -384,9 +424,11 @@ export default class RoundTracker extends EventTarget {
 		this.#virusCount = null;
 		this.#spawnPairOccupied = false;
 		this.#armed = true;
-		this.#nextPillBlank = null;
 		this.#lastNextPillKey = null;
 		this.#descentBaseline = null;
+		this.#lastReadableNextPill = null;
+		this.#pendingThrownPill = null;
+		this.#nextPillBlank = null;
 		this.#topRowEmpty = new Array(COLS).fill(true);
 		this.#topRowConfirmedEmpty = false;
 		this.#endedExternally = false;
@@ -402,39 +444,67 @@ export default class RoundTracker extends EventTarget {
 		);
 	}
 
-	// Fires once per readable->blank transition of the next-pill preview -- see the header
-	// comment for the live report this is based on. Deliberately not gated to PLAYING (mirrors
-	// #detectPieceEntries/#detectGarbageEntries below, both unconditional too): the preview can
-	// in principle blank during POPULATING as well, and there's no reason to special-case that
-	// out. #nextPillBlank starts each round as null (not yet observed), not false -- the first
-	// frame processed after #startRound() only ever seeds the baseline, never fires, regardless
-	// of whether it happens to read as blank (e.g. nextPill: null before calibration, or simply
-	// because no frame has been read yet). Without that distinction, a round whose very first
-	// processed frame has no readable next-pill data (the common case for a caller -- e.g. most
-	// of this file's own tests -- that doesn't bother simulating next-pill transitions) would
-	// register a spurious "transition into blank" on frame one, before any real piece has
-	// spawned. The tradeoff: the very first genuine piece of a round is only counted if a
-	// readable frame was actually observed before its own throw; if the round's first-ever
-	// processed frame already happens to catch that first piece mid-throw (blank), this event
-	// under-counts by exactly one for that round -- an acceptable rounding error for a
-	// pieces-per-minute rate averaged over an entire run, and safer than the alternative of
-	// risking a spurious over-count on every round's first frame.
-	#detectPillThrown(nextPill) {
+	// Single-player's opt-in strategy -- see the header comment for the full "why two strategies"
+	// reasoning. Fires piece_entered off the next-pill preview's own blank-during-throw /
+	// readable-again cycle rather than reading the board at all: a readable->blank transition
+	// marks the instant a throw begins (whatever was shown right before -- #lastReadableNextPill
+	// -- is the piece now being thrown, captured into #pendingThrownPill), and the following
+	// blank->readable transition confirms the throw has completed, at which point this fires
+	// using that captured piece's own color/shape data (the *new* next-pill reading at that point
+	// describes the *following* piece, not the one that just landed). Never depends on catching
+	// the piece on the board mid-descent before it moves on, so a low capture frame rate or a
+	// fast player can no longer cause a missed spawn the way
+	// #detectPieceEntriesViaSpawnPosition's board-sampling approach can.
+	//
+	// #nextPillBlank starts each round as null (not yet observed), not false -- the first frame
+	// processed after #startRound() only ever seeds #lastReadableNextPill/#nextPillBlank, never
+	// fires, regardless of whether it happens to read as blank (e.g. nextPill: null before
+	// calibration, or simply because no frame has been read yet). Without that distinction, a
+	// round whose very first processed frame has no readable next-pill data would register a
+	// spurious "transition into blank" on frame one, before any real piece has spawned. The
+	// tradeoff: the very first genuine piece of a round is only counted if a readable frame was
+	// actually observed before its own throw; if the round's first-ever processed frame already
+	// happens to catch that first piece mid-throw (blank), this event under-counts by exactly one
+	// for that round -- acceptable, and safer than risking a spurious over-count on every round's
+	// first frame.
+	#detectPieceEntriesViaNextPillBlank(nextPill) {
 		const blank = nextPillKey(nextPill) === null;
 
 		if (blank && this.#nextPillBlank === false) {
+			// throw beginning -- capture identity from whatever was shown right before this
+			this.#pendingThrownPill = this.#lastReadableNextPill;
+		} else if (
+			!blank &&
+			this.#nextPillBlank === true &&
+			this.#pendingThrownPill
+		) {
+			// throw complete -- the captured piece has now fully entered
+			const { left, right } = this.#pendingThrownPill;
 			this.dispatchEvent(
-				new CustomEvent('pill_thrown', { detail: { roundId: this.#roundId } })
+				new CustomEvent('piece_entered', {
+					detail: {
+						roundId: this.#roundId,
+						cells: [
+							{ col: SPAWN_COL_LEFT, shape: left.shape, color: left.color },
+							{ col: SPAWN_COL_RIGHT, shape: right.shape, color: right.color },
+						],
+					},
+				})
 			);
+			this.#pendingThrownPill = null;
 		}
 
+		if (!blank) {
+			this.#lastReadableNextPill = nextPill;
+		}
 		this.#nextPillBlank = blank;
 	}
 
-	// frame.nextPill: the { left, right } shape BoardOCR.identifyNextPill() returns -- see the
-	// header comment for how it's used alongside descent evidence to tell a genuine new spawn
-	// apart from the previously-reported piece just moving/rotating back onto the spawn pair.
-	#detectPieceEntries(board, nextPill) {
+	// Versus's default (unchanged) strategy. frame.nextPill: the { left, right } shape
+	// BoardOCR.identifyNextPill() returns -- see the header comment for how it's used alongside
+	// descent evidence to tell a genuine new spawn apart from the previously-reported piece just
+	// moving/rotating back onto the spawn pair.
+	#detectPieceEntriesViaSpawnPosition(board, nextPill) {
 		const left = board[0][SPAWN_COL_LEFT];
 		const right = board[0][SPAWN_COL_RIGHT];
 		const occupied = isHorizontalPillHalf(left) && isHorizontalPillHalf(right);

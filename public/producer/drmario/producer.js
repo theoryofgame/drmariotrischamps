@@ -173,7 +173,11 @@ function buildTrackers() {
 			trackers.player1.syncRoundStart({ roundId: event.detail.roundId })
 		);
 	} else {
-		trackers = { single: new RoundTracker() };
+		// useNextPillBlankDetection: single-player only -- see RoundTracker.js's header comment
+		// for why versus can't use this strategy.
+		trackers = {
+			single: new RoundTracker({ useNextPillBlankDetection: true }),
+		};
 		wireTracker(trackers.single, 'SP');
 	}
 }

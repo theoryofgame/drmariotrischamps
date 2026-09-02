@@ -117,7 +117,12 @@
 
 			// Single-player has no shared round boundary to sync across bottles the way versus
 			// does (see RoundTracker.js's header comment) -- just the one instance.
-			const tracker = new RoundTracker();
+			// useNextPillBlankDetection: single-player's next-pill capture is independently
+			// calibrated (see "Independent per-region calibration" in CLAUDE.md), making the
+			// blank-during-throw signal reliable there -- versus can't use it (confirmed live: its
+			// own next-pill preview doesn't blank the same way), so this stays opt-in per instance
+			// rather than becoming the new default.
+			const tracker = new RoundTracker({ useNextPillBlankDetection: true });
 
 			// The displayed LOW/MED/HI speed isn't the game's real internal fall-speed -- see
 			// InternalSpeed.js. That calculation needs a running count of pills entered since the

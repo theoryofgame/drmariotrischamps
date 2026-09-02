@@ -64,8 +64,7 @@ describe('RoundTracker', () => {
 			'round_end',
 			'piece_entered',
 			'garbage_entered',
-			'virus_cleared',
-			'pill_thrown'
+			'virus_cleared'
 		);
 	});
 
@@ -506,56 +505,121 @@ describe('RoundTracker', () => {
 		});
 	});
 
-	describe('pill_thrown detection (next-pill preview blanking)', () => {
-		const readable = nextPill('blue', 'blue'); // color is irrelevant here, only readability
+	// The single-player-only opt-in strategy (useNextPillBlankDetection: true) -- a separate
+	// tracker/events pair, since the shared beforeEach's tracker uses the default (versus's)
+	// board-position strategy, covered by 'piece entry detection' above.
+	describe('piece entry detection via next-pill blanking (useNextPillBlankDetection)', () => {
+		let nextPillTracker, nextPillEvents;
 
-		it('does not fire on the very first frame of a round, even if it reads as blank', () => {
-			tracker.processFrame(frame({ virus: 0 })); // round_start, nextPill: null (default)
-
-			expect(events.filter(e => e.type === 'pill_thrown')).toEqual([]);
+		beforeEach(() => {
+			nextPillTracker = new RoundTracker({ useNextPillBlankDetection: true });
+			nextPillEvents = collectEvents(nextPillTracker, 'piece_entered');
 		});
 
-		it('fires once when a readable next-pill reading goes blank', () => {
-			tracker.processFrame(frame({ virus: 0, nextPill: readable })); // round_start, readable
-			events.length = 0;
+		it('does not fire on the very first frame of a round, even if it reads as blank', () => {
+			nextPillTracker.processFrame(frame({ virus: 0 })); // round_start, nextPill: null
 
-			tracker.processFrame(frame({ virus: 0 })); // blank -- the throw animation
+			expect(nextPillEvents).toEqual([]);
+		});
 
-			expect(events).toEqual([{ type: 'pill_thrown', detail: { roundId: 1 } }]);
+		it("fires once a queued pill's throw completes, reporting that pill's own color/shape -- not from the board at all", () => {
+			// (blue, red) is queued before it's thrown
+			nextPillTracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('blue', 'red') })
+			);
+			nextPillEvents.length = 0;
+
+			nextPillTracker.processFrame(frame({ virus: 0 })); // blank -- (blue,red) is being thrown
+			expect(nextPillEvents).toEqual([]); // not yet -- the throw hasn't completed
+
+			// the *following* piece is now queued; this is what confirms (blue,red) landed
+			nextPillTracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('yellow', 'yellow') })
+			);
+
+			expect(nextPillEvents).toEqual([
+				{
+					type: 'piece_entered',
+					detail: {
+						roundId: 1,
+						cells: [
+							{ col: 3, shape: 'left', color: 'blue' },
+							{ col: 4, shape: 'right', color: 'red' },
+						],
+					},
+				},
+			]);
 		});
 
 		it('does not re-fire on consecutive blank frames -- one event per blank episode', () => {
-			tracker.processFrame(frame({ virus: 0, nextPill: readable }));
-			events.length = 0;
+			nextPillTracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('blue', 'blue') })
+			);
+			nextPillTracker.processFrame(frame({ virus: 0 })); // blank
+			nextPillTracker.processFrame(frame({ virus: 0 })); // still blank
+			nextPillTracker.processFrame(frame({ virus: 0 })); // still blank
+			nextPillEvents.length = 0;
 
-			tracker.processFrame(frame({ virus: 0 }));
-			tracker.processFrame(frame({ virus: 0 }));
-			tracker.processFrame(frame({ virus: 0 }));
+			nextPillTracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('red', 'red') })
+			);
 
-			expect(events.filter(e => e.type === 'pill_thrown')).toHaveLength(1);
+			expect(nextPillEvents).toHaveLength(1);
 		});
 
-		it('fires once per readable-blank cycle across several pieces', () => {
-			tracker.processFrame(frame({ virus: 0, nextPill: readable })); // round_start
-			events.length = 0;
+		it('fires once per cycle across several distinct pieces, each reporting its own captured colors', () => {
+			nextPillTracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('blue', 'red') })
+			); // round_start, piece 1 queued
+			nextPillTracker.processFrame(frame({ virus: 0 })); // blank -- piece 1 thrown
+			nextPillTracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('yellow', 'yellow') })
+			); // piece 1 lands, piece 2 queued
+			nextPillTracker.processFrame(frame({ virus: 0 })); // blank -- piece 2 thrown
+			nextPillTracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('red', 'blue') })
+			); // piece 2 lands, piece 3 queued
 
-			tracker.processFrame(frame({ virus: 0 })); // blank -- piece 1 thrown
-			tracker.processFrame(frame({ virus: 0, nextPill: readable })); // readable again
-			tracker.processFrame(frame({ virus: 0 })); // blank -- piece 2 thrown
-			tracker.processFrame(frame({ virus: 0, nextPill: readable })); // readable again
-			tracker.processFrame(frame({ virus: 0 })); // blank -- piece 3 thrown
-
-			expect(events.filter(e => e.type === 'pill_thrown')).toHaveLength(3);
+			const colorsReported = nextPillEvents.map(e =>
+				e.detail.cells.map(c => c.color)
+			);
+			expect(colorsReported).toEqual([
+				['blue', 'red'],
+				['yellow', 'yellow'],
+			]);
 		});
 
 		it('does not fire while next-pill data is simply never supplied at all (no false per-frame firing)', () => {
-			tracker.processFrame(frame({ virus: 0 })); // round_start, blank
-			events.length = 0;
+			nextPillTracker.processFrame(frame({ virus: 0 })); // round_start, blank
+			nextPillTracker.processFrame(frame({ virus: 0 }));
+			nextPillTracker.processFrame(frame({ virus: 0 }));
 
-			tracker.processFrame(frame({ virus: 0 }));
-			tracker.processFrame(frame({ virus: 0 }));
+			expect(nextPillEvents).toEqual([]);
+		});
 
-			expect(events.filter(e => e.type === 'pill_thrown')).toEqual([]);
+		it('resets cleanly across a round boundary -- a pill mid-throw at round_end does not leak into the next round', () => {
+			nextPillTracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('blue', 'red') })
+			);
+			nextPillTracker.processFrame(frame({ virus: 0 })); // blank -- mid-throw when the round ends
+			nextPillTracker.processFrame(frame({ result: 'topout' }));
+			nextPillEvents.length = 0;
+
+			// next round: a queued piece's own cycle completes normally, unaffected by the
+			// previous round's dangling mid-throw state
+			nextPillTracker.processFrame(
+				frame({ level: 1, virus: 0, nextPill: nextPill('yellow', 'red') })
+			);
+			nextPillTracker.processFrame(frame({ virus: 0 }));
+			nextPillTracker.processFrame(
+				frame({ virus: 0, nextPill: nextPill('blue', 'blue') })
+			);
+
+			expect(nextPillEvents).toHaveLength(1);
+			expect(nextPillEvents[0].detail.cells.map(c => c.color)).toEqual([
+				'yellow',
+				'red',
+			]);
 		});
 	});
 

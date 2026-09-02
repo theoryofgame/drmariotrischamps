@@ -40,30 +40,18 @@ function frame({
 	return { result, level, virus, board: boardWith(cells), hasBottle, nextPill };
 }
 
-// A readable next-pill reading, used only to seed/restore RoundTracker's "was readable" baseline
-// around each spawnPiece() call below -- see its own comment, and RoundTracker.js's
-// #detectPillThrown, for why pill_thrown only fires on a *readable*-to-blank transition, not off
-// an unknown/never-yet-observed starting state. The actual color is irrelevant to every test that
-// uses this; only its readable-ness matters.
-const READABLE_NEXT_PILL = {
-	left: { type: 'pill', shape: 'left', color: 'red' },
-	right: { type: 'pill', shape: 'right', color: 'red' },
-};
-
 // Spawns a piece at the fixed spawn columns, shows it one row lower (descent evidence -- see
 // RoundTracker.js's header comment for why this is needed to reliably re-arm detection for the
 // *next* spawn in a hand-built sequence with no next-pill data), then clears it away entirely.
-// Also carries a next-pill reading that goes blank on the first frame (simulating the real game's
-// own pill-throw animation) and back to readable afterward -- see RoundTracker.js's
-// #detectPillThrown/pill_thrown -- so that consecutive calls correctly fire it once each (the
-// caller must seed an initial READABLE_NEXT_PILL reading, e.g. on the frame that starts the
-// round, before the first call -- see #detectPillThrown's own doc comment for why the very first
-// frame of a round never fires it on its own).
+// LiveMetrics is tested against the default RoundTracker (the board-position strategy, same as
+// versus) throughout this file -- it's just reacting to whatever piece_entered events arrive,
+// regardless of which of RoundTracker's two detection strategies produced them, so there's no
+// need to also exercise the next-pill-blank strategy here (that's RoundTracker's own concern,
+// covered by its own test suite).
 function spawnPiece(tracker, leftColor, rightColor, virus = 0) {
 	tracker.processFrame(
 		frame({
 			virus,
-			nextPill: null, // blank during the throw
 			cells: [
 				{ col: 3, row: 0, type: 'pill', shape: 'left', color: leftColor },
 				{ col: 4, row: 0, type: 'pill', shape: 'right', color: rightColor },
@@ -73,14 +61,13 @@ function spawnPiece(tracker, leftColor, rightColor, virus = 0) {
 	tracker.processFrame(
 		frame({
 			virus,
-			nextPill: READABLE_NEXT_PILL, // readable again, showing the next piece in the queue
 			cells: [
 				{ col: 3, row: 1, type: 'pill', shape: 'left', color: leftColor },
 				{ col: 4, row: 1, type: 'pill', shape: 'right', color: rightColor },
 			],
 		})
 	);
-	tracker.processFrame(frame({ virus, nextPill: READABLE_NEXT_PILL }));
+	tracker.processFrame(frame({ virus }));
 }
 
 describe('LiveMetrics', () => {
@@ -102,11 +89,7 @@ describe('LiveMetrics', () => {
 		});
 
 		it('computes pieces/minute from pieces placed since the run started', () => {
-			// nextPill seeds the "readable" baseline #detectPillThrown needs before it will fire
-			// on the first spawnPiece() call's own blank frame -- see spawnPiece()'s own comment.
-			roundTracker.processFrame(
-				frame({ virus: 0, nextPill: READABLE_NEXT_PILL })
-			); // round_start -> run starts now
+			roundTracker.processFrame(frame({ virus: 0 })); // round_start -> run starts now
 
 			spawnPiece(roundTracker, 'red', 'blue');
 			spawnPiece(roundTracker, 'yellow', 'red');
@@ -234,16 +217,12 @@ describe('LiveMetrics', () => {
 		it('does not reset pace stats across a stage_clear -> next round_start, with carryAcrossLevels', () => {
 			stats = new LiveMetrics(roundTracker, { carryAcrossLevels: true });
 
-			roundTracker.processFrame(
-				frame({ virus: 0, nextPill: READABLE_NEXT_PILL })
-			); // round_start
+			roundTracker.processFrame(frame({ virus: 0 })); // round_start
 			spawnPiece(roundTracker, 'red', 'blue');
 			spawnPiece(roundTracker, 'yellow', 'red');
 
 			roundTracker.processFrame(frame({ result: 'stage_clear' })); // level cleared
-			roundTracker.processFrame(
-				frame({ level: 1, virus: 0, nextPill: READABLE_NEXT_PILL })
-			); // next level, same run -- re-seeds the baseline for the same reason as round_start
+			roundTracker.processFrame(frame({ level: 1, virus: 0 })); // next level, same run
 
 			// pace (pieces/minute) survived the level transition
 			spawnPiece(roundTracker, 'blue', 'yellow');

@@ -71,7 +71,6 @@ export default class LiveMetrics extends EventTarget {
 		roundTracker.addEventListener('piece_entered', e =>
 			this.#onPieceEntered(e.detail)
 		);
-		roundTracker.addEventListener('pill_thrown', () => this.#onPillThrown());
 		roundTracker.addEventListener('virus_cleared', e =>
 			this.#onVirusCleared(e.detail)
 		);
@@ -95,11 +94,9 @@ export default class LiveMetrics extends EventTarget {
 		this.#lastRoundEndOutcome = outcome;
 	}
 
-	// pieceCount (pieces/minute) increments off the separate pill_thrown event instead -- see
-	// #onPillThrown and RoundTracker.js's own header comment for why. This handler is left with
-	// just the per-piece color bookkeeping (droughts/rush), which needs the actual cell colors
-	// pill_thrown doesn't carry.
 	#onPieceEntered({ cells }) {
+		this.#piecesCount++;
+
 		const colors = cells.map(cell => cell.color);
 
 		for (const color of COLORS) {
@@ -126,16 +123,6 @@ export default class LiveMetrics extends EventTarget {
 			this.#maxRushStreak = this.#rushStreak;
 		}
 
-		this.#emitUpdate();
-	}
-
-	// Reported live: the on-screen next-pill preview reliably goes blank for a few frames during
-	// the real game's own pill-throw animation, once per piece -- a simpler, more direct signal
-	// for pieces/minute than #onPieceEntered's own spawn-pair-occupancy detection (kept
-	// unchanged there for droughts/rush, which need the real cell/color data this event doesn't
-	// carry -- see RoundTracker.js's own header comment on pill_thrown).
-	#onPillThrown() {
-		this.#piecesCount++;
 		this.#emitUpdate();
 	}
 
