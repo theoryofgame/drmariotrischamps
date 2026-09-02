@@ -1,0 +1,284 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<style>
+			html,
+			body {
+				padding: 0;
+				margin: 0;
+			}
+
+			* {
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+				box-sizing: border-box;
+			}
+
+			/* Stats only -- no bottle, no next-pill preview, nothing else. For a player who wants
+			   to show their real NES capture directly (instead of drmario_qualify_practice.html's
+			   sprite recreation) but still wants the qualifying stats on stream. Transparent
+			   throughout, same as the other practice views -- the panel sits in one corner and the
+			   player composites (and crops/repositions in OBS) their own capture underneath. */
+			#stream_bg {
+				position: relative;
+				width: 1280px;
+				height: 720px;
+				overflow: hidden;
+				color: #eee;
+			}
+
+			#stats-panel {
+				position: absolute;
+				top: 24px;
+				left: 24px;
+				background: #0a0b0a;
+				border: 2px solid #64b7d5;
+				border-radius: 6px;
+				padding: 12px 16px;
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+				min-width: 190px;
+			}
+
+			.stat-row {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				gap: 16px;
+				min-height: 22px;
+			}
+
+			.stat-label {
+				font-size: 13px;
+				font-weight: bold;
+				color: #aaa;
+			}
+
+			.stat-value {
+				font-size: 18px;
+				font-weight: bold;
+				color: #fff;
+			}
+
+			/* Rush/drought share one row (whichever is currently active, if either) so the panel's
+			   own height never changes as they come and go -- same "fixed footprint" principle as
+			   the side-box callout in the other practice views. */
+			.callout-row .stat-value.rush,
+			.callout-row .stat-label.rush {
+				color: #f80;
+			}
+
+			/* Qualifying score -- blank until the 30:00 mark, then frozen for the rest of the
+			   session (see QualifyRunTracker.js's checkQualifySnapshot). Set apart with its own
+			   divider and gold color so it reads as "the number that matters" at a glance. */
+			.qualify-row {
+				border-top: 1px solid #333;
+				padding-top: 8px;
+				margin-top: 2px;
+			}
+
+			.qualify-row .stat-label,
+			.qualify-row .stat-value {
+				color: #fae65f;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="stream_bg">
+			<div id="stats-panel">
+				<div class="stat-row">
+					<span class="stat-label">PILLS/MIN</span>
+					<span class="stat-value" id="pills-per-min">0.0</span>
+				</div>
+				<div class="stat-row">
+					<span class="stat-label">VIRUSES/MIN</span>
+					<span class="stat-value" id="viruses-per-min">0.0</span>
+				</div>
+				<div class="stat-row">
+					<span class="stat-label">SPEED</span>
+					<span class="stat-value" id="speed">?</span>
+				</div>
+				<div class="stat-row callout-row" id="callout-row">
+					<span class="stat-label" id="callout-label"></span>
+					<span class="stat-value" id="callout-value"></span>
+				</div>
+				<div class="stat-row qualify-row">
+					<span class="stat-label">QUALIFY</span>
+					<span class="stat-value" id="qualify-score">--</span>
+				</div>
+			</div>
+		</div>
+
+		<script type="module">
+			import Connection from '/js/connection.js';
+			import RoundTracker from '/producer/drmario/RoundTracker.js';
+			import LiveMetrics from '/producer/drmario/LiveMetrics.js';
+			import QualifyRunTracker from '/producer/drmario/QualifyRunTracker.js';
+			import { calculateInternalSpeed } from '/producer/drmario/InternalSpeed.js';
+			import { COLOR_PALETTE } from '/producer/drmario/constants.js';
+
+			// Same WS-URL/private-room wiring as drmario_qualify_practice.html -- no room/admin of
+			// its own, this is single-player only. Also receives practice_admin.html's
+			// qualifyPracticeResetRun command over this same connection (see the API object below)
+			// -- it tracks the same open-ended qualifying run drmario_qualify_practice.html does,
+			// just displayed without a board, so the two can run side by side off the one admin
+			// page without any extra wiring.
+			const [, , layout, secret] = location.pathname.split('/');
+			const wsProtocol = location.protocol.match(/^https/i) ? 'wss:' : 'ws:';
+			const connection = new Connection(
+				`${wsProtocol}//${location.host}/ws/view/drmario/${layout}/${secret}`
+			);
+
+			const tracker = new RoundTracker();
+
+			let piecesEnteredThisRound = 0;
+			tracker.addEventListener('round_start', () => {
+				piecesEnteredThisRound = 0;
+			});
+			tracker.addEventListener('piece_entered', () => {
+				piecesEnteredThisRound++;
+			});
+
+			// carryAcrossLevels: true -- same reasoning as every other single-player Dr Mario view,
+			// a level clear here is a continuation of the same open-ended run, not a fresh
+			// playthrough.
+			const stats = new LiveMetrics(tracker, { carryAcrossLevels: true });
+			const qualifyTracker = new QualifyRunTracker(tracker);
+
+			// No board here, so none of the other practice views' board-freeze/lookback machinery
+			// applies -- just a single flag so the numbers stop drifting once the tracked run has
+			// actually ended (QualifyRunTracker's own 'ended' status), mirroring
+			// drmario_qualify_practice.html's own renderStats() guard.
+			let runEnded = false;
+			let latestRunSnapshot = null;
+
+			function resetDisplay() {
+				runEnded = false;
+				latestRunSnapshot = null;
+			}
+
+			function formatRate(n) {
+				return n.toFixed(1);
+			}
+
+			function rgbFor(colorName) {
+				const rgb = COLOR_PALETTE[colorName];
+				return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+			}
+
+			const DROUGHT_DISPLAY_THRESHOLD = 5;
+
+			function worstDrought(colorDroughts) {
+				const [color, count] = Object.entries(colorDroughts).reduce(
+					(best, cur) => (cur[1] > best[1] ? cur : best)
+				);
+				return count < DROUGHT_DISPLAY_THRESHOLD ? null : { color, count };
+			}
+
+			function renderCallout(s) {
+				const labelEl = document.getElementById('callout-label');
+				const valueEl = document.getElementById('callout-value');
+
+				if (s.isRushing) {
+					labelEl.textContent = 'RUSH';
+					valueEl.textContent = `x${s.rushStreak}`;
+					labelEl.className = 'stat-label rush';
+					valueEl.className = 'stat-value rush';
+					valueEl.style.color = '';
+					return;
+				}
+
+				const drought = worstDrought(s.colorDroughts);
+				if (drought) {
+					const color = rgbFor(drought.color);
+					labelEl.textContent = `${drought.color.toUpperCase()} DROUGHT`;
+					valueEl.textContent = `x${drought.count}`;
+					labelEl.className = 'stat-label';
+					valueEl.className = 'stat-value';
+					labelEl.style.color = color;
+					valueEl.style.color = color;
+					return;
+				}
+
+				labelEl.textContent = '';
+				valueEl.textContent = '';
+				labelEl.className = 'stat-label';
+				valueEl.className = 'stat-value';
+				labelEl.style.color = '';
+				valueEl.style.color = '';
+			}
+
+			function renderRateStats(s) {
+				document.getElementById('pills-per-min').textContent = formatRate(
+					s.piecesPerMinute
+				);
+				document.getElementById('viruses-per-min').textContent = formatRate(
+					s.virusClearsPerMinute
+				);
+				renderCallout(s);
+			}
+
+			stats.addEventListener('stats_updated', e => {
+				if (runEnded) return;
+				renderRateStats(e.detail);
+			});
+
+			function renderQualifyScore() {
+				const snapshot = latestRunSnapshot?.qualifySnapshot;
+				document.getElementById('qualify-score').textContent = snapshot
+					? `${snapshot.level}(${snapshot.remainingViruses})`
+					: '--';
+			}
+
+			qualifyTracker.addEventListener('run_updated', e => {
+				latestRunSnapshot = e.detail;
+				runEnded = e.detail.status === 'ended';
+				renderQualifyScore();
+			});
+
+			// Ticks the qualify-snapshot check (crossing 30:00 isn't tied to any discrete
+			// RoundTracker event -- see checkQualifySnapshot's own doc comment) and re-pulls a
+			// fresh LiveMetrics snapshot so the rate stats keep ticking smoothly between discrete
+			// piece/virus events too, rather than only updating in jumps -- same fix as the "time
+			// this level" ticking bug in drmario_qualify_practice.html.
+			setInterval(() => {
+				qualifyTracker.checkQualifySnapshot();
+				if (!runEnded) renderRateStats(stats.getSnapshot());
+			}, 250);
+
+			function renderFrame(data) {
+				const internalSpeed = calculateInternalSpeed(
+					data.speed,
+					piecesEnteredThisRound
+				);
+				document.getElementById('speed').textContent = internalSpeed ?? '?';
+
+				tracker.processFrame(data);
+			}
+
+			const API = {
+				frame(_player_idx, data) {
+					if (data.layout === 'single_player') renderFrame(data);
+				},
+				qualifyPracticeResetRun() {
+					qualifyTracker.reset();
+					resetDisplay();
+				},
+				message() {}, // noop -- chat messages, same as every other Dr Mario view
+			};
+
+			connection.onMessage = function (frame) {
+				try {
+					const [method, ...args] = frame;
+					API[method]?.apply(API, args);
+				} catch (e) {
+					console.error(e);
+				}
+			};
+		</script>
+	</body>
+</html>
