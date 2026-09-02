@@ -64,7 +64,8 @@ describe('RoundTracker', () => {
 			'round_end',
 			'piece_entered',
 			'garbage_entered',
-			'virus_cleared'
+			'virus_cleared',
+			'pill_thrown'
 		);
 	});
 
@@ -502,6 +503,59 @@ describe('RoundTracker', () => {
 			);
 
 			expect(events.filter(e => e.type === 'piece_entered')).toEqual([]);
+		});
+	});
+
+	describe('pill_thrown detection (next-pill preview blanking)', () => {
+		const readable = nextPill('blue', 'blue'); // color is irrelevant here, only readability
+
+		it('does not fire on the very first frame of a round, even if it reads as blank', () => {
+			tracker.processFrame(frame({ virus: 0 })); // round_start, nextPill: null (default)
+
+			expect(events.filter(e => e.type === 'pill_thrown')).toEqual([]);
+		});
+
+		it('fires once when a readable next-pill reading goes blank', () => {
+			tracker.processFrame(frame({ virus: 0, nextPill: readable })); // round_start, readable
+			events.length = 0;
+
+			tracker.processFrame(frame({ virus: 0 })); // blank -- the throw animation
+
+			expect(events).toEqual([{ type: 'pill_thrown', detail: { roundId: 1 } }]);
+		});
+
+		it('does not re-fire on consecutive blank frames -- one event per blank episode', () => {
+			tracker.processFrame(frame({ virus: 0, nextPill: readable }));
+			events.length = 0;
+
+			tracker.processFrame(frame({ virus: 0 }));
+			tracker.processFrame(frame({ virus: 0 }));
+			tracker.processFrame(frame({ virus: 0 }));
+
+			expect(events.filter(e => e.type === 'pill_thrown')).toHaveLength(1);
+		});
+
+		it('fires once per readable-blank cycle across several pieces', () => {
+			tracker.processFrame(frame({ virus: 0, nextPill: readable })); // round_start
+			events.length = 0;
+
+			tracker.processFrame(frame({ virus: 0 })); // blank -- piece 1 thrown
+			tracker.processFrame(frame({ virus: 0, nextPill: readable })); // readable again
+			tracker.processFrame(frame({ virus: 0 })); // blank -- piece 2 thrown
+			tracker.processFrame(frame({ virus: 0, nextPill: readable })); // readable again
+			tracker.processFrame(frame({ virus: 0 })); // blank -- piece 3 thrown
+
+			expect(events.filter(e => e.type === 'pill_thrown')).toHaveLength(3);
+		});
+
+		it('does not fire while next-pill data is simply never supplied at all (no false per-frame firing)', () => {
+			tracker.processFrame(frame({ virus: 0 })); // round_start, blank
+			events.length = 0;
+
+			tracker.processFrame(frame({ virus: 0 }));
+			tracker.processFrame(frame({ virus: 0 }));
+
+			expect(events.filter(e => e.type === 'pill_thrown')).toEqual([]);
 		});
 	});
 

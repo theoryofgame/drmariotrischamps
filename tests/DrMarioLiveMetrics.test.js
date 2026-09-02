@@ -40,13 +40,30 @@ function frame({
 	return { result, level, virus, board: boardWith(cells), hasBottle, nextPill };
 }
 
+// A readable next-pill reading, used only to seed/restore RoundTracker's "was readable" baseline
+// around each spawnPiece() call below -- see its own comment, and RoundTracker.js's
+// #detectPillThrown, for why pill_thrown only fires on a *readable*-to-blank transition, not off
+// an unknown/never-yet-observed starting state. The actual color is irrelevant to every test that
+// uses this; only its readable-ness matters.
+const READABLE_NEXT_PILL = {
+	left: { type: 'pill', shape: 'left', color: 'red' },
+	right: { type: 'pill', shape: 'right', color: 'red' },
+};
+
 // Spawns a piece at the fixed spawn columns, shows it one row lower (descent evidence -- see
 // RoundTracker.js's header comment for why this is needed to reliably re-arm detection for the
 // *next* spawn in a hand-built sequence with no next-pill data), then clears it away entirely.
+// Also carries a next-pill reading that goes blank on the first frame (simulating the real game's
+// own pill-throw animation) and back to readable afterward -- see RoundTracker.js's
+// #detectPillThrown/pill_thrown -- so that consecutive calls correctly fire it once each (the
+// caller must seed an initial READABLE_NEXT_PILL reading, e.g. on the frame that starts the
+// round, before the first call -- see #detectPillThrown's own doc comment for why the very first
+// frame of a round never fires it on its own).
 function spawnPiece(tracker, leftColor, rightColor, virus = 0) {
 	tracker.processFrame(
 		frame({
 			virus,
+			nextPill: null, // blank during the throw
 			cells: [
 				{ col: 3, row: 0, type: 'pill', shape: 'left', color: leftColor },
 				{ col: 4, row: 0, type: 'pill', shape: 'right', color: rightColor },
@@ -56,13 +73,14 @@ function spawnPiece(tracker, leftColor, rightColor, virus = 0) {
 	tracker.processFrame(
 		frame({
 			virus,
+			nextPill: READABLE_NEXT_PILL, // readable again, showing the next piece in the queue
 			cells: [
 				{ col: 3, row: 1, type: 'pill', shape: 'left', color: leftColor },
 				{ col: 4, row: 1, type: 'pill', shape: 'right', color: rightColor },
 			],
 		})
 	);
-	tracker.processFrame(frame({ virus }));
+	tracker.processFrame(frame({ virus, nextPill: READABLE_NEXT_PILL }));
 }
 
 describe('LiveMetrics', () => {
@@ -84,7 +102,11 @@ describe('LiveMetrics', () => {
 		});
 
 		it('computes pieces/minute from pieces placed since the run started', () => {
-			roundTracker.processFrame(frame({ virus: 0 })); // round_start -> run starts now
+			// nextPill seeds the "readable" baseline #detectPillThrown needs before it will fire
+			// on the first spawnPiece() call's own blank frame -- see spawnPiece()'s own comment.
+			roundTracker.processFrame(
+				frame({ virus: 0, nextPill: READABLE_NEXT_PILL })
+			); // round_start -> run starts now
 
 			spawnPiece(roundTracker, 'red', 'blue');
 			spawnPiece(roundTracker, 'yellow', 'red');
@@ -209,21 +231,43 @@ describe('LiveMetrics', () => {
 	});
 
 	describe('run vs. round reset (single-player carryAcrossLevels)', () => {
-		it('does not reset running stats across a stage_clear -> next round_start, with carryAcrossLevels', () => {
+		it('does not reset pace stats across a stage_clear -> next round_start, with carryAcrossLevels', () => {
 			stats = new LiveMetrics(roundTracker, { carryAcrossLevels: true });
 
-			roundTracker.processFrame(frame({ virus: 0 })); // round_start
+			roundTracker.processFrame(
+				frame({ virus: 0, nextPill: READABLE_NEXT_PILL })
+			); // round_start
 			spawnPiece(roundTracker, 'red', 'blue');
 			spawnPiece(roundTracker, 'yellow', 'red');
 
 			roundTracker.processFrame(frame({ result: 'stage_clear' })); // level cleared
-			roundTracker.processFrame(frame({ level: 1, virus: 0 })); // next level, same run
+			roundTracker.processFrame(
+				frame({ level: 1, virus: 0, nextPill: READABLE_NEXT_PILL })
+			); // next level, same run -- re-seeds the baseline for the same reason as round_start
 
-			expect(stats.getSnapshot().colorDroughts.blue).toBeGreaterThan(0); // not zeroed out
-			// piece count survived the level transition
+			// pace (pieces/minute) survived the level transition
 			spawnPiece(roundTracker, 'blue', 'yellow');
 			jest.setSystemTime(new Date('2024-01-01T00:00:30Z'));
 			expect(stats.getSnapshot().piecesPerMinute).toBeCloseTo(6); // 3 pieces total / 0.5 min
+		});
+
+		it('resets rush/drought stats on every new level, even with carryAcrossLevels', () => {
+			stats = new LiveMetrics(roundTracker, { carryAcrossLevels: true });
+
+			roundTracker.processFrame(frame({ virus: 0 })); // round_start
+			spawnPiece(roundTracker, 'red', 'blue');
+			spawnPiece(roundTracker, 'red', 'blue');
+			expect(stats.getSnapshot().colorDroughts.yellow).toBeGreaterThan(0);
+			expect(stats.getSnapshot().rushStreak).toBe(2);
+
+			roundTracker.processFrame(frame({ result: 'stage_clear' })); // level cleared
+			roundTracker.processFrame(frame({ level: 1, virus: 0 })); // next level, same run
+
+			const snapshot = stats.getSnapshot();
+			expect(snapshot.colorDroughts).toEqual({ red: 0, blue: 0, yellow: 0 });
+			expect(snapshot.rushStreak).toBe(0);
+			expect(snapshot.maxRushStreak).toBe(0);
+			expect(snapshot.isRushing).toBe(false);
 		});
 
 		it('does reset when the previous round ended in game_over, even with carryAcrossLevels', () => {

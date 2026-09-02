@@ -73,13 +73,19 @@
 //   hand-built frame sequences and one live-harness repro) -- worth rechecking if a live session
 //   ever suggests otherwise.
 //
-// Two more events exist purely to feed a stats layer built on top of this file (see
+// Three more events exist purely to feed a stats layer built on top of this file (see
 // LiveMetrics.js), not for round-lifecycle purposes: virus_cleared fires whenever the tracked
 // virus count drops during PLAYING (silent before now -- #virusCount was only ever read
-// internally, e.g. to freeze it into round_end's detail), and garbage_entered's cells gain a
+// internally, e.g. to freeze it into round_end's detail), garbage_entered's cells gain a
 // restRows field (plus a wave-level maxRestRows) -- a purely geometric "how many rows will this
 // newly-arrived half fall before resting, inclusive of the spawn row" computed once at the
-// moment of arrival using the board already in hand, not tracked live as it actually falls.
+// moment of arrival using the board already in hand, not tracked live as it actually falls --
+// and pill_thrown (see #detectPillThrown), added after a direct report that the on-screen
+// next-pill preview reliably goes blank for a few frames during the real game's own pill-throw
+// animation, once per piece: a simpler, more direct signal for LiveMetrics.js's pieces/minute
+// pace stat than #detectPieceEntries' own spawn-pair-occupancy approach below, which stays
+// exactly as it is (unchanged, still what rush-streak/color-drought/InternalSpeed's own piece
+// count key off) since this new event carries no piece identity (cells/colors) to feed them.
 //
 // One instance tracks one bottle. Versus mode (two independent bottles) should use two
 // instances, the same way Tetris runs one GameTracker per OcrPlayer.
@@ -188,6 +194,7 @@ export default class RoundTracker extends EventTarget {
 	#virusCount = null;
 	#spawnPairOccupied = false;
 	#armed = true; // ready to treat the next spawn-pair occupation as a genuine new piece
+	#nextPillBlank = null; // null = not yet observed this round; see #detectPillThrown
 	#lastNextPillKey = null;
 	#descentBaseline = null;
 	#topRowEmpty = new Array(COLS).fill(true); // last frame's row-0 occupancy, per column
@@ -321,6 +328,7 @@ export default class RoundTracker extends EventTarget {
 			}
 		}
 
+		this.#detectPillThrown(frame.nextPill);
 		this.#detectPieceEntries(frame.board, frame.nextPill);
 		this.#detectGarbageEntries(frame.board);
 	}
@@ -376,6 +384,7 @@ export default class RoundTracker extends EventTarget {
 		this.#virusCount = null;
 		this.#spawnPairOccupied = false;
 		this.#armed = true;
+		this.#nextPillBlank = null;
 		this.#lastNextPillKey = null;
 		this.#descentBaseline = null;
 		this.#topRowEmpty = new Array(COLS).fill(true);
@@ -391,6 +400,35 @@ export default class RoundTracker extends EventTarget {
 				},
 			})
 		);
+	}
+
+	// Fires once per readable->blank transition of the next-pill preview -- see the header
+	// comment for the live report this is based on. Deliberately not gated to PLAYING (mirrors
+	// #detectPieceEntries/#detectGarbageEntries below, both unconditional too): the preview can
+	// in principle blank during POPULATING as well, and there's no reason to special-case that
+	// out. #nextPillBlank starts each round as null (not yet observed), not false -- the first
+	// frame processed after #startRound() only ever seeds the baseline, never fires, regardless
+	// of whether it happens to read as blank (e.g. nextPill: null before calibration, or simply
+	// because no frame has been read yet). Without that distinction, a round whose very first
+	// processed frame has no readable next-pill data (the common case for a caller -- e.g. most
+	// of this file's own tests -- that doesn't bother simulating next-pill transitions) would
+	// register a spurious "transition into blank" on frame one, before any real piece has
+	// spawned. The tradeoff: the very first genuine piece of a round is only counted if a
+	// readable frame was actually observed before its own throw; if the round's first-ever
+	// processed frame already happens to catch that first piece mid-throw (blank), this event
+	// under-counts by exactly one for that round -- an acceptable rounding error for a
+	// pieces-per-minute rate averaged over an entire run, and safer than the alternative of
+	// risking a spurious over-count on every round's first frame.
+	#detectPillThrown(nextPill) {
+		const blank = nextPillKey(nextPill) === null;
+
+		if (blank && this.#nextPillBlank === false) {
+			this.dispatchEvent(
+				new CustomEvent('pill_thrown', { detail: { roundId: this.#roundId } })
+			);
+		}
+
+		this.#nextPillBlank = blank;
 	}
 
 	// frame.nextPill: the { left, right } shape BoardOCR.identifyNextPill() returns -- see the

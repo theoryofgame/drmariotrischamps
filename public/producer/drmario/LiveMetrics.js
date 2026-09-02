@@ -50,11 +50,15 @@ export default class LiveMetrics extends EventTarget {
 	// carryAcrossLevels: single-player only. Dr Mario's own round boundary fires on every level,
 	// not just when a playthrough actually ends (see RoundTracker.js -- a round_end with
 	// outcome: 'stage_clear' just advances to the next, harder level, same continuous
-	// playthrough). Resetting rate/streak/drought stats on every one of those would make them
-	// visibly jump each time a level clears, which isn't the intent -- they should span the whole
-	// playthrough ("run"), only truly resetting when it ends (round_end with any *other* outcome).
-	// Versus has no such ambiguity today (no "advance to a harder level, same run" concept there),
-	// so it keeps the simpler always-reset-on-round_start behavior, the default here.
+	// playthrough). Resetting the *pace* stats (pieces/virus-clears per minute) on every one of
+	// those would make them visibly jump each time a level clears, which isn't the intent --
+	// they should span the whole playthrough ("run"), only truly resetting when it ends
+	// (round_end with any *other* outcome). Rush streak and color droughts are different: per
+	// direct request, those reset fresh on every new level regardless -- they're about *recent*
+	// piece patterns, not the whole run's pace, so a level boundary is a reasonable place for
+	// them to start over even mid-run (see #onRoundStart/#resetLevelStats). Versus has no such
+	// ambiguity today (no "advance to a harder level, same run" concept there), so it keeps the
+	// simpler always-full-reset-on-round_start behavior, the default here.
 	constructor(roundTracker, { carryAcrossLevels = false } = {}) {
 		super();
 
@@ -67,6 +71,7 @@ export default class LiveMetrics extends EventTarget {
 		roundTracker.addEventListener('piece_entered', e =>
 			this.#onPieceEntered(e.detail)
 		);
+		roundTracker.addEventListener('pill_thrown', () => this.#onPillThrown());
 		roundTracker.addEventListener('virus_cleared', e =>
 			this.#onVirusCleared(e.detail)
 		);
@@ -81,6 +86,7 @@ export default class LiveMetrics extends EventTarget {
 		if (isNewRun) {
 			this.#reset();
 		} else {
+			this.#resetLevelStats();
 			this.#emitUpdate();
 		}
 	}
@@ -89,9 +95,11 @@ export default class LiveMetrics extends EventTarget {
 		this.#lastRoundEndOutcome = outcome;
 	}
 
+	// pieceCount (pieces/minute) increments off the separate pill_thrown event instead -- see
+	// #onPillThrown and RoundTracker.js's own header comment for why. This handler is left with
+	// just the per-piece color bookkeeping (droughts/rush), which needs the actual cell colors
+	// pill_thrown doesn't carry.
 	#onPieceEntered({ cells }) {
-		this.#piecesCount++;
-
 		const colors = cells.map(cell => cell.color);
 
 		for (const color of COLORS) {
@@ -118,6 +126,16 @@ export default class LiveMetrics extends EventTarget {
 			this.#maxRushStreak = this.#rushStreak;
 		}
 
+		this.#emitUpdate();
+	}
+
+	// Reported live: the on-screen next-pill preview reliably goes blank for a few frames during
+	// the real game's own pill-throw animation, once per piece -- a simpler, more direct signal
+	// for pieces/minute than #onPieceEntered's own spawn-pair-occupancy detection (kept
+	// unchanged there for droughts/rush, which need the real cell/color data this event doesn't
+	// carry -- see RoundTracker.js's own header comment on pill_thrown).
+	#onPillThrown() {
+		this.#piecesCount++;
 		this.#emitUpdate();
 	}
 
@@ -152,15 +170,23 @@ export default class LiveMetrics extends EventTarget {
 		this.#runStartTime = Date.now();
 		this.#piecesCount = 0;
 		this.#virusClearsCount = 0;
-		this.#colorDroughts = { red: 0, blue: 0, yellow: 0 };
-		this.#lastPieceColors = null;
-		this.#rushStreak = 0;
-		this.#maxRushStreak = 0;
+		this.#resetLevelStats();
 		this.#garbageWavesSent = 0;
 		this.#garbageCellsSent = 0;
 		this.#saltSeconds = 0;
 
 		this.#emitUpdate();
+	}
+
+	// Rush streak and color droughts specifically -- split out from #reset() so a level-up
+	// within the same carryAcrossLevels run (see #onRoundStart) can reset just these two without
+	// touching the pace stats (piecesCount/virusClearsCount/runStartTime), which are meant to
+	// span the whole run.
+	#resetLevelStats() {
+		this.#colorDroughts = { red: 0, blue: 0, yellow: 0 };
+		this.#lastPieceColors = null;
+		this.#rushStreak = 0;
+		this.#maxRushStreak = 0;
 	}
 
 	#emitUpdate() {
